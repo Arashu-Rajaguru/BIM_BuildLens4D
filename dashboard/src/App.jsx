@@ -12,43 +12,44 @@ export const isMobileDevice = () => {
 };
 
 export const CANDIDATE_BACKENDS = [
-  'https://cluster-correlation-nursery-fiscal.trycloudflare.com/api',
-  'https://buildlens4d.loca.lt/api',
+  'https://lucky-rings-strive.loca.lt/api',
   'http://192.168.29.102:8000/api',
   'http://localhost:8000/api'
 ];
 
 export const getDefaultApiBase = () => {
   if (typeof window !== 'undefined') {
+    const origin = window.location.origin;
+
+    // 1. If currently loaded from ANY remote web address (localtunnel, Render, LAN IP),
+    // ALWAYS use the origin we are loaded from! Both frontend and backend run on that same host!
+    if (origin && !origin.includes('localhost') && !origin.includes('127.0.0.1') && !origin.startsWith('capacitor:') && !origin.startsWith('ionic:') && !origin.startsWith('file:') && !origin.includes('null')) {
+      return `${origin}/api`;
+    }
+
+    // 2. Check if the user manually saved a custom URL in settings (purge stale 503 URLs)
     const saved = localStorage.getItem('buildlens_backend_url');
     if (saved && saved.trim()) {
       const clean = saved.trim().replace(/\/+$/, '');
-      // If mobile, NEVER allow localhost from old cached localStorage
-      if (isMobileDevice() && (clean.includes('localhost') || clean.includes('127.0.0.1'))) {
+      if (clean.includes('trycloudflare.com') || clean.includes('buildlens4d.loca.lt') || (isMobileDevice() && (clean.includes('localhost') || clean.includes('127.0.0.1')))) {
         localStorage.removeItem('buildlens_backend_url');
       } else {
         return clean;
       }
     }
 
-    const origin = window.location.origin;
-    // If running from a remote domain or LAN IP, use that origin directly
-    if (!origin.includes('localhost') && !origin.includes('127.0.0.1') && !origin.startsWith('capacitor:') && !origin.startsWith('ionic:') && !origin.startsWith('file:') && !origin.includes('null')) {
-      return `${origin}/api`;
-    }
-
-    // On mobile devices or Capacitor apps, always default to the live Cloudflare tunnel
+    // 3. If running inside Capacitor mobile app or file scheme:
     if (isMobileDevice()) {
-      return 'https://cluster-correlation-nursery-fiscal.trycloudflare.com/api';
+      return 'https://lucky-rings-strive.loca.lt/api';
     }
 
-    // Desktop development
+    // 4. Desktop development
     if (window.location.port === '5173') {
       return 'http://localhost:8000/api';
     }
     return `${origin}/api`;
   }
-  return 'https://cluster-correlation-nursery-fiscal.trycloudflare.com/api';
+  return 'https://lucky-rings-strive.loca.lt/api';
 };
 
 export const apiFetch = async (endpoint, options = {}, customBase = null, timeoutMs = 12000) => {
@@ -303,9 +304,16 @@ export default function App() {
 
     let base = targetApiBase || apiBaseUrl;
 
-    // Sanity check: On mobile or Capacitor, NEVER use localhost!
-    if (isMobileDevice() && (base.includes('localhost') || base.includes('127.0.0.1'))) {
-      base = 'https://cluster-correlation-nursery-fiscal.trycloudflare.com/api';
+    // If currently loaded from a real domain or LAN IP, ALWAYS use current origin/api!
+    if (typeof window !== 'undefined' && window.location.origin && !window.location.origin.includes('localhost') && !window.location.origin.includes('127.0.0.1') && !window.location.origin.startsWith('capacitor:') && !window.location.origin.startsWith('file:') && !window.location.origin.includes('null')) {
+      base = `${window.location.origin}/api`;
+    }
+
+    // Purge dead 503 URLs or invalid localhost on mobile
+    if (base.includes('trycloudflare.com') || base.includes('buildlens4d.loca.lt') || (isMobileDevice() && (base.includes('localhost') || base.includes('127.0.0.1')))) {
+      base = (typeof window !== 'undefined' && window.location.origin && !window.location.origin.includes('localhost') && !window.location.origin.includes('127.0.0.1') && !window.location.origin.startsWith('capacitor:'))
+        ? `${window.location.origin}/api`
+        : 'https://lucky-rings-strive.loca.lt/api';
       setApiBaseUrl(base);
       localStorage.setItem('buildlens_backend_url', base);
     }
@@ -329,17 +337,12 @@ export default function App() {
 
     // 2. If primary target failed, probe candidate backends automatically!
     if (!activeBase) {
-      const candidatesToProbe = isMobileDevice()
-        ? [
-            'https://cluster-correlation-nursery-fiscal.trycloudflare.com/api',
-            'https://buildlens4d.loca.lt/api',
-            'http://192.168.29.102:8000/api'
-          ]
-        : [
-            'http://localhost:8000/api',
-            'https://cluster-correlation-nursery-fiscal.trycloudflare.com/api',
-            'http://192.168.29.102:8000/api'
-          ];
+      const candidatesToProbe = [
+        (typeof window !== 'undefined' && window.location.origin ? `${window.location.origin}/api` : null),
+        'https://lucky-rings-strive.loca.lt/api',
+        'http://192.168.29.102:8000/api',
+        'http://localhost:8000/api'
+      ].filter(Boolean);
 
       for (const candidate of candidatesToProbe) {
         if (candidate === base) continue;
@@ -2292,12 +2295,12 @@ export default function App() {
                     type="button"
                     className="server-preset-btn"
                     onClick={() => {
-                      setServerConfigInput('https://cluster-correlation-nursery-fiscal.trycloudflare.com/api');
-                      handleTestAndApplyServer('https://cluster-correlation-nursery-fiscal.trycloudflare.com/api');
+                      setServerConfigInput('https://lucky-rings-strive.loca.lt/api');
+                      handleTestAndApplyServer('https://lucky-rings-strive.loca.lt/api');
                     }}
                   >
-                    <div style={{ fontWeight: 600, color: '#38bdf8' }}>☁️ Cloudflare Tunnel</div>
-                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>trycloudflare.com (Fast)</div>
+                    <div style={{ fontWeight: 600, color: '#38bdf8' }}>🌐 Public Tunnel (Live)</div>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>lucky-rings-strive.loca.lt</div>
                   </button>
 
                   <button
