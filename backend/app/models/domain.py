@@ -117,3 +117,20 @@ class AuditLog(Base):
     actor_id = Column(String(64), nullable=False)     # Engineer / Reviewer / System
     details_json = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False, index=True)
+
+
+class VerificationReport(Base):
+    __tablename__ = "verification_reports"
+
+    id = Column(String(64), primary_key=True, index=True)
+    project_id = Column(String(64), ForeignKey("projects.id"), nullable=False, index=True)
+    plan_type = Column(String(64), default="site_photo")  # site_photo, floor_plan, structural_drawing, drone_capture
+    media_url = Column(String(512), nullable=False)
+    file_hash = Column(String(128), nullable=False)
+    metadata_json = Column(Text, nullable=True)  # dimensions, format, filesize
+    results_json = Column(Text, nullable=False)   # detected elements, bounding boxes, confidence
+    compliance_percentage = Column(Float, default=100.0)
+    overall_verdict = Column(String(128), default="Compliant")
+    requires_human_review = Column(String(16), default="false")
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+

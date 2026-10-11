@@ -2,10 +2,22 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>BuildLens 4D — AR Construction Progress Dashboard</title>
-    <meta name="description" content="Mobile AR & 4D BIM construction progress monitoring dashboard comparing planned milestones with site observations." />
+    <link rel="icon" type="image/svg+xml" href="/pwa-icon.svg" />
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    
+    <!-- Mobile App & PWA Meta -->
+    <meta name="theme-color" content="#0284c7" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="BuildLens 4D" />
+    <link rel="apple-touch-icon" href="/pwa-180x180.png" />
+    <link rel="apple-touch-icon" sizes="192x192" href="/pwa-192x192.png" />
+    <link rel="apple-touch-icon" sizes="512x512" href="/pwa-512x512.png" />
+
+    <title>BuildLens 4D — AR Construction Progress & BIM Verification</title>
+    <meta name="description" content="Mobile AR & 4D BIM construction progress monitoring and physical building verification system." />
+    
     <!-- Google Fonts: Inter & Outfit -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -14,5 +26,15 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
+    <script>
+      // Register PWA Service Worker for Mobile App Support
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js')
+            .then((reg) => console.log('BuildLens 4D PWA Service Worker Registered:', reg.scope))
+            .catch((err) => console.warn('PWA Service Worker Registration failed:', err));
+        });
+      }
+    </script>
   </body>
 </html>

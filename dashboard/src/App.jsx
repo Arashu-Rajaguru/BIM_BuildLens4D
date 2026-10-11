@@ -2,7 +2,9 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import './App.css';
 import { MOCK_PROJECT, MOCK_SUMMARY, MOCK_ELEMENTS } from './mockData';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 
+  (typeof window !== 'undefined' ? `${window.location.origin}/api` : 'http://localhost:8000/api');
+
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('overview'); // 'overview', 'scrubber', 'review_queue', 'cv_scanner', 'markers', 'audit_trail', 'reports'
@@ -57,6 +59,119 @@ export default function App() {
   // Benchmark Target State
   const [selectedBenchmark, setSelectedBenchmark] = useState(null);
 
+  // Building Plan & Image Verification State (FR-026, FR-027, FR-030)
+  const [verificationFile, setVerificationFile] = useState(null);
+  const [verificationPreviewUrl, setVerificationPreviewUrl] = useState(null);
+  const [verificationPlanType, setVerificationPlanType] = useState('site_photo');
+  const [verificationZone, setVerificationZone] = useState('ALL');
+  const [verificationObserver, setVerificationObserver] = useState('eng_field_01');
+  const [verificationLoading, setVerificationLoading] = useState(false);
+  const [verificationResult, setVerificationResult] = useState(null);
+  const [verificationHistory, setVerificationHistory] = useState([]);
+  const verificationInputRef = useRef(null);
+
+  // PWA Mobile App Installation State
+  const [deferredInstallPrompt, setDeferredInstallPrompt] = useState(null);
+  const [isAppInstalled, setIsAppInstalled] = useState(false);
+  const [showInstallGuide, setShowInstallGuide] = useState(false);
+
+  useEffect(() => {
+    const handleBeforeInstall = (e) => {
+      e.preventDefault();
+      setDeferredInstallPrompt(e);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstall);
+    window.addEventListener('appinstalled', () => {
+      setIsAppInstalled(true);
+      setDeferredInstallPrompt(null);
+    });
+
+    if (window.matchMedia('(display-mode: standalone)').matches) {
+      setIsAppInstalled(true);
+    }
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+    };
+  }, []);
+
+  const handleInstallClick = async () => {
+    if (deferredInstallPrompt) {
+      deferredInstallPrompt.prompt();
+      const { outcome } = await deferredInstallPrompt.userChoice;
+      if (outcome === 'accepted') {
+        setIsAppInstalled(true);
+      }
+      setDeferredInstallPrompt(null);
+    } else {
+      setShowInstallGuide(true);
+    }
+  };
+
+
+  // File selection for Plan & Image Verification
+  const handleSelectVerificationFile = (e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setVerificationFile(file);
+      setVerificationPreviewUrl(URL.createObjectURL(file));
+      setVerificationResult(null);
+    }
+  };
+
+  // Submit Plan/Image for 4D Verification
+  const handleRunImageVerification = async (e) => {
+    e?.preventDefault();
+    if (!verificationFile) {
+      alert("Please select a building photo or plan image to verify.");
+      return;
+    }
+    setVerificationLoading(true);
+    setErrorMsg(null);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', verificationFile);
+      formData.append('plan_type', verificationPlanType);
+      formData.append('target_zone', verificationZone);
+      formData.append('observer_id', verificationObserver);
+
+      const projId = 'proj-terminal-04';
+      const res = await fetch(`${API_BASE}/projects/${projId}/verify-image`, {
+        method: 'POST',
+        body: formData
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.detail || 'Image verification failed.');
+      }
+
+      const result = await res.json();
+      setVerificationResult(result);
+      loadData(mode);
+      loadVerificationHistory();
+    } catch (err) {
+      console.error("Verification error:", err);
+      setErrorMsg(`Verification failed: ${err.message}`);
+    } finally {
+      setVerificationLoading(false);
+    }
+  };
+
+  const loadVerificationHistory = async () => {
+    try {
+      const projId = 'proj-terminal-04';
+      const res = await fetch(`${API_BASE}/projects/${projId}/verification-reports`);
+      if (res.ok) {
+        setVerificationHistory(await res.json());
+      }
+    } catch (e) {
+      console.warn("Could not load verification history:", e);
+    }
+  };
+
   // Load all initial project data
   const loadData = async (targetMode = mode) => {
     setLoading(true);
@@ -77,14 +192,15 @@ export default function App() {
       setIsApiOnline(true);
 
       const projId = 'proj-terminal-04';
-      const [projRes, sumRes, elemRes, revRes, audRes, repRes, markRes] = await Promise.all([
+      const [projRes, sumRes, elemRes, revRes, audRes, repRes, markRes, verRes] = await Promise.all([
         fetch(`${API_BASE}/projects/${projId}`),
         fetch(`${API_BASE}/projects/${projId}/summary`),
         fetch(`${API_BASE}/projects/${projId}/elements`),
         fetch(`${API_BASE}/projects/${projId}/reviews`),
         fetch(`${API_BASE}/projects/${projId}/audit-trail`),
         fetch(`${API_BASE}/projects/${projId}/report/summary`),
-        fetch(`${API_BASE}/projects/${projId}/markers`)
+        fetch(`${API_BASE}/projects/${projId}/markers`),
+        fetch(`${API_BASE}/projects/${projId}/verification-reports`)
       ]);
 
       if (projRes.ok) setProject(await projRes.json());
@@ -93,6 +209,7 @@ export default function App() {
       if (revRes.ok) setReviewDecisions(await revRes.json());
       if (audRes.ok) setAuditLogs(await audRes.json());
       if (repRes.ok) setGovernanceData(await repRes.json());
+      if (verRes && verRes.ok) setVerificationHistory(await verRes.json());
       if (markRes.ok) {
         const bmList = await markRes.json();
         setBenchmarks(bmList);
@@ -394,6 +511,16 @@ export default function App() {
               </span>
             </div>
 
+            {!isAppInstalled && (
+              <button
+                className="install-pwa-btn"
+                onClick={handleInstallClick}
+                title="Install BuildLens 4D as a Mobile App on your phone"
+              >
+                📲 <span className="install-label-full">Install App</span>
+              </button>
+            )}
+
             <button className="refresh-btn" onClick={() => loadData(mode)} title="Refresh all data">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" />
@@ -412,6 +539,12 @@ export default function App() {
             onClick={() => setActiveTab('overview')}
           >
             🏢 4D Schedule & Elements
+          </button>
+          <button
+            className={`tab-link ${activeTab === 'image_verification' ? 'active' : ''}`}
+            onClick={() => setActiveTab('image_verification')}
+          >
+            📸 Verify Building Plan / Image (FR-026/030)
           </button>
           <button
             className={`tab-link ${activeTab === 'scrubber' ? 'active' : ''}`}
@@ -673,6 +806,343 @@ export default function App() {
                 </div>
               </section>
             </>
+          )}
+
+          {/* TAB: BUILDING PLAN & IMAGE VERIFICATION (FR-026, FR-027, FR-030) */}
+          {activeTab === 'image_verification' && (
+            <div className="verification-layout">
+              {/* Upload & Configuration Card */}
+              <div className="verification-upload-card">
+                <div className="verification-header-flex">
+                  <div>
+                    <h2 className="section-title">Upload Building Plan or Image for 4D Verification</h2>
+                    <p className="section-sub">
+                      Upload physical site photos, 2D architectural blueprints, or drone surveys to detect structural elements, verify progress against the 4D BIM digital twin, and generate official compliance inspection reports.
+                    </p>
+                  </div>
+                  {verificationResult && (
+                    <div className="verification-quick-actions">
+                      <a
+                        href={verificationResult.report_url.startsWith('http') ? verificationResult.report_url : `${API_BASE.replace('/api', '')}${verificationResult.report_url}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="download-report-btn"
+                      >
+                        🖨️ Open / Print Official PDF Report
+                      </a>
+                    </div>
+                  )}
+                </div>
+
+                <form onSubmit={handleRunImageVerification} className="verification-form-grid">
+                  {/* File Upload Zone */}
+                  <div
+                    className={`file-dropzone ${verificationPreviewUrl ? 'has-file' : ''}`}
+                    onClick={() => verificationInputRef.current?.click()}
+                  >
+                    <input
+                      type="file"
+                      ref={verificationInputRef}
+                      accept="image/*,.pdf"
+                      onChange={handleSelectVerificationFile}
+                      style={{ display: 'none' }}
+                    />
+                    {verificationPreviewUrl ? (
+                      <div className="preview-container">
+                        <img src={verificationPreviewUrl} alt="Selected Upload" className="preview-thumbnail" />
+                        <div className="change-file-overlay">
+                          <span>🔄 Click or Tap to Choose Different Image / Plan</span>
+                          <span style={{ fontSize: '0.75rem', opacity: 0.8 }}>({verificationFile?.name})</span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="dropzone-content">
+                        <div className="dropzone-icon">📁</div>
+                        <div className="dropzone-title">Click or Tap to Upload Building Plan or Site Photo</div>
+                        <div className="dropzone-sub">Supports JPEG, PNG, WEBP, or Architectural Drawings (Camera on Phone Supported)</div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Configuration Controls */}
+                  <div className="verification-controls">
+                    <div className="form-group">
+                      <label className="form-label">Classification / Media Type:</label>
+                      <select
+                        className="form-select"
+                        value={verificationPlanType}
+                        onChange={(e) => setVerificationPlanType(e.target.value)}
+                      >
+                        <option value="site_photo">📸 On-Site Physical Building Photo</option>
+                        <option value="floor_plan">📐 2D Floor Plan / Blueprint</option>
+                        <option value="structural_drawing">🏗️ Structural Engineering Drawing</option>
+                        <option value="drone_capture">🚁 Aerial Drone Survey Capture</option>
+                      </select>
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">Target Spatial Zone:</label>
+                      <select
+                        className="form-select"
+                        value={verificationZone}
+                        onChange={(e) => setVerificationZone(e.target.value)}
+                      >
+                        <option value="ALL">All Spatial Zones (Whole Structure)</option>
+                        <option value="Foundation">Foundation & Subsurface Footings</option>
+                        <option value="Ground">Ground Floor Grid Columns & Retaining Walls</option>
+                        <option value="Mezzanine">Level 1 Mezzanine Concourse & Beams</option>
+                      </select>
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">Inspector / Surveyor ID:</label>
+                      <input
+                        type="text"
+                        className="form-input"
+                        value={verificationObserver}
+                        onChange={(e) => setVerificationObserver(e.target.value)}
+                        required
+                      />
+                    </div>
+
+                    <button
+                      type="submit"
+                      className="run-verify-btn"
+                      disabled={verificationLoading || !verificationFile}
+                    >
+                      {verificationLoading ? (
+                        <span>⏳ Analyzing Structural Geometry & Matching 4D Milestones...</span>
+                      ) : (
+                        <span>⚡ Verify Image Against 4D BIM & Generate Audit Report</span>
+                      )}
+                    </button>
+                  </div>
+                </form>
+              </div>
+
+              {/* Verification Results Viewport & Executive Report */}
+              {verificationResult && (
+                <div className="verification-results-container">
+                  {/* Verdict & Compliance Header Banner */}
+                  <div className={`verdict-card ${verificationResult.requires_human_review ? 'verdict-warning' : 'verdict-compliant'}`}>
+                    <div className="verdict-left">
+                      <div className="verdict-tag">4D BIM VERIFICATION VERDICT:</div>
+                      <h3 className="verdict-title">{verificationResult.overall_verdict}</h3>
+                      <div className="verdict-sub">
+                        Evaluated {verificationResult.total_detected_elements} components against BIM project '{verificationResult.project_id}' milestones.
+                      </div>
+                    </div>
+                    <div className="verdict-right">
+                      <div className="compliance-gauge">
+                        <div className="gauge-val">{verificationResult.compliance_percentage}%</div>
+                        <div className="gauge-label">4D Milestone Compliance</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Summary Metric Cards */}
+                  <div className="verification-metrics-grid">
+                    <div className="kpi-card">
+                      <div className="kpi-label">Detected Elements</div>
+                      <div className="kpi-number" style={{ color: '#38bdf8' }}>{verificationResult.total_detected_elements}</div>
+                      <div className="kpi-foot">Structural Components</div>
+                    </div>
+                    <div className="kpi-card" style={{ borderLeft: '4px solid #059669' }}>
+                      <div className="kpi-label">Verified Complete</div>
+                      <div className="kpi-number" style={{ color: '#059669' }}>{verificationResult.verified_complete_count}</div>
+                      <div className="kpi-foot">Conforms to Schedule</div>
+                    </div>
+                    <div className="kpi-card" style={{ borderLeft: '4px solid #d97706' }}>
+                      <div className="kpi-label">In Progress</div>
+                      <div className="kpi-number" style={{ color: '#d97706' }}>{verificationResult.in_progress_count}</div>
+                      <div className="kpi-foot">Active on Site</div>
+                    </div>
+                    <div className="kpi-card" style={{ borderLeft: '4px solid #7c3aed' }}>
+                      <div className="kpi-label">Human Review Needed</div>
+                      <div className="kpi-number" style={{ color: '#7c3aed' }}>{verificationResult.occluded_review_count}</div>
+                      <div className="kpi-foot">SRS 8.3 Occlusion Alert</div>
+                    </div>
+                  </div>
+
+                  {/* Visual Detection Overlay Viewport */}
+                  <div className="visual-inspection-card">
+                    <div className="inspection-card-header">
+                      <h3 className="panel-title">Visual Detection & Bounding Box Overlays</h3>
+                      <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                        SHA-256: {verificationResult.file_hash.substring(0, 16)}... &bull; Resolution: {verificationResult.image_metadata?.width}x{verificationResult.image_metadata?.height}px
+                      </span>
+                    </div>
+
+                    <div className="interactive-overlay-viewport">
+                      <img
+                        src={verificationResult.media_url.startsWith('http') ? verificationResult.media_url : `${API_BASE.replace('/api', '')}${verificationResult.media_url}`}
+                        alt="Analyzed Building"
+                        className="analyzed-base-img"
+                      />
+                      {verificationResult.elements.map((el) => {
+                        const [bx, by, bw, bh] = el.bounding_box;
+                        const statusColors = {
+                          verified_complete: '#059669',
+                          in_progress: '#d97706',
+                          potentially_delayed: '#dc2626',
+                          needs_manual_review: '#7c3aed',
+                          not_started: '#64748b'
+                        };
+                        const color = statusColors[el.visual_status] || '#38bdf8';
+                        return (
+                          <div
+                            key={el.element_id}
+                            className="detection-bbox"
+                            style={{
+                              left: `${bx * 100}%`,
+                              top: `${by * 100}%`,
+                              width: `${bw * 100}%`,
+                              height: `${bh * 100}%`,
+                              borderColor: color
+                            }}
+                          >
+                            <span className="bbox-label-tag" style={{ background: color }}>
+                              {el.element_id} [{(el.confidence_score * 100).toFixed(0)}%]
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Discrepancy Breakdown Table & Cards */}
+                  <div className="explorer-card" style={{ marginTop: '20px' }}>
+                    <div className="explorer-header">
+                      <div>
+                        <h3 className="section-title">Element Discrepancy & Verification Audit Breakdown</h3>
+                        <p className="section-sub">
+                          Comparing visible as-built state vs. planned 4D construction milestone dates.
+                        </p>
+                      </div>
+                      <a
+                        href={verificationResult.report_url.startsWith('http') ? verificationResult.report_url : `${API_BASE.replace('/api', '')}${verificationResult.report_url}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="download-report-btn"
+                      >
+                        🖨️ View & Print Full Official Report
+                      </a>
+                    </div>
+
+                    <div className="elements-table-wrapper">
+                      <div className="desktop-table-view">
+                        <table className="elements-table">
+                          <thead>
+                            <tr>
+                              <th>Element ID</th>
+                              <th>Type</th>
+                              <th>Design Label</th>
+                              <th>Spatial Zone</th>
+                              <th>4D Milestone Window</th>
+                              <th>Observed Status</th>
+                              <th>Confidence</th>
+                              <th>Verification Notes</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {verificationResult.elements.map((el) => {
+                              const styleInfo = stateColors[el.visual_status] || stateColors.not_started;
+                              return (
+                                <tr key={el.element_id}>
+                                  <td className="element-id-cell">{el.element_id}</td>
+                                  <td><span className="type-tag">{el.element_type}</span></td>
+                                  <td className="label-cell">{el.label}</td>
+                                  <td className="zone-cell">{el.spatial_zone}</td>
+                                  <td className="schedule-cell">{el.planned_start} → {el.planned_end}</td>
+                                  <td>
+                                    <span className={`state-badge ${styleInfo.badge}`}>
+                                      <span>{styleInfo.icon}</span>
+                                      {styleInfo.label}
+                                    </span>
+                                  </td>
+                                  <td><strong>{(el.confidence_score * 100).toFixed(0)}%</strong></td>
+                                  <td style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>{el.notes}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      <div className="mobile-cards-view">
+                        {verificationResult.elements.map((el) => {
+                          const styleInfo = stateColors[el.visual_status] || stateColors.not_started;
+                          return (
+                            <div key={el.element_id} className="mobile-element-card">
+                              <div className="mobile-card-top">
+                                <span className="element-id-cell">{el.element_id}</span>
+                                <span className={`state-badge ${styleInfo.badge}`}>
+                                  <span>{styleInfo.icon}</span>
+                                  {styleInfo.label}
+                                </span>
+                              </div>
+                              <div className="mobile-card-body">
+                                <h4 className="mobile-card-title">{el.label}</h4>
+                                <div className="mobile-card-tags">
+                                  <span className="type-tag">{el.element_type}</span>
+                                  <span className="zone-pill">{el.spatial_zone}</span>
+                                  <span style={{ fontSize: '0.72rem', color: '#38bdf8' }}>
+                                    Conf: {(el.confidence_score * 100).toFixed(0)}%
+                                  </span>
+                                </div>
+                                <div className="mobile-card-schedule">
+                                  <span>📅 {el.planned_start} → {el.planned_end}</span>
+                                </div>
+                                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', background: 'rgba(0,0,0,0.3)', padding: '6px 8px', borderRadius: '4px' }}>
+                                  {el.notes}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Past Verification Reports History */}
+              {verificationHistory.length > 0 && (
+                <div className="explorer-card" style={{ marginTop: '24px' }}>
+                  <div className="explorer-header">
+                    <div>
+                      <h3 className="section-title">Verified Inspection Reports History ({verificationHistory.length})</h3>
+                      <p className="section-sub">Immutable audit records of all previous building image and plan verifications.</p>
+                    </div>
+                  </div>
+                  <div className="verification-history-grid">
+                    {verificationHistory.map((rep) => (
+                      <div key={rep.id} className="history-report-card">
+                        <div className="history-card-header">
+                          <span className="queue-id">{rep.id}</span>
+                          <span className="type-tag">{rep.plan_type.replace('_', ' ').toUpperCase()}</span>
+                        </div>
+                        <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)', margin: '6px 0' }}>
+                          {rep.overall_verdict}
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                          <span>Compliance: <strong style={{ color: '#38bdf8' }}>{rep.compliance_percentage}%</strong></span>
+                          <span>{new Date(rep.created_at).toLocaleDateString()}</span>
+                        </div>
+                        <a
+                          href={rep.report_url.startsWith('http') ? rep.report_url : `${API_BASE.replace('/api', '')}${rep.report_url}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="history-view-link"
+                        >
+                          📄 Open Full Report
+                        </a>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
           )}
 
           {/* TAB 2: 4D TIME-LAPSE SCHEDULE SCRUBBER */}
@@ -1475,6 +1945,51 @@ export default function App() {
             <div className="modal-footer-row">
               <button className="action-btn modal-dismiss-btn" onClick={() => setInspectElement(null)}>
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PWA Mobile App Install Guide Modal */}
+      {showInstallGuide && (
+        <div className="modal-backdrop" onClick={() => setShowInstallGuide(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '480px' }}>
+            <div className="modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span style={{ fontSize: '1.5rem' }}>📲</span>
+                <h3 style={{ margin: 0 }}>Install BuildLens 4D Mobile App</h3>
+              </div>
+              <button className="close-btn" onClick={() => setShowInstallGuide(false)}>✕</button>
+            </div>
+
+            <div style={{ padding: '8px 0', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+              <p style={{ marginBottom: '16px' }}>
+                You can install BuildLens 4D as a full-screen native mobile application directly on your phone:
+              </p>
+
+              <div style={{ background: 'rgba(2, 132, 199, 0.1)', border: '1px solid rgba(2, 132, 199, 0.3)', borderRadius: '8px', padding: '14px', marginBottom: '12px' }}>
+                <div style={{ fontWeight: 700, color: '#38bdf8', marginBottom: '6px' }}>🤖 Android (Chrome / Edge / Samsung Internet):</div>
+                <div style={{ fontSize: '0.85rem' }}>
+                  1. Tap the browser menu (<strong>⋮</strong> three dots top-right).<br />
+                  2. Tap <strong>"Install app"</strong> or <strong>"Add to Home screen"</strong>.<br />
+                  3. Tap <strong>Install</strong> to add it to your apps list!
+                </div>
+              </div>
+
+              <div style={{ background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.3)', borderRadius: '8px', padding: '14px', marginBottom: '16px' }}>
+                <div style={{ fontWeight: 700, color: '#34d399', marginBottom: '6px' }}>🍏 Apple iOS (iPhone / iPad Safari):</div>
+                <div style={{ fontSize: '0.85rem' }}>
+                  1. Tap the <strong>Share</strong> button (square with arrow ⎋ at bottom).<br />
+                  2. Scroll down and tap <strong>"Add to Home Screen"</strong> (➕).<br />
+                  3. Tap <strong>Add</strong> top-right to launch it as a full-screen app!
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button className="action-btn" onClick={() => setShowInstallGuide(false)}>
+                Got it
               </button>
             </div>
           </div>

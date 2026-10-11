@@ -60,16 +60,25 @@ app.mount("/uploads", StaticFiles(directory=upload_dir), name="uploads")
 # Include API v1 router under /api
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
+# Mount compiled React PWA Mobile App on root for unified hosting
+dashboard_dist = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "dashboard",
+    "dist"
+)
+if os.path.exists(dashboard_dist):
+    app.mount("/", StaticFiles(directory=dashboard_dist, html=True), name="mobile_app")
+else:
+    @app.get("/", tags=["Root"])
+    def read_root():
+        return {
+            "system": "BuildLens 4D API",
+            "version": settings.VERSION,
+            "docs_url": "/docs",
+            "health_url": f"{settings.API_V1_STR}/health",
+            "description": "Mobile AR & 4D BIM progress monitoring backend."
+        }
 
-@app.get("/", tags=["Root"])
-def read_root():
-    return {
-        "system": "BuildLens 4D API",
-        "version": settings.VERSION,
-        "docs_url": "/docs",
-        "health_url": f"{settings.API_V1_STR}/health",
-        "description": "Mobile AR & 4D BIM progress monitoring backend."
-    }
 
 @app.exception_handler(Exception)
 async def generic_exception_handler(request: Request, exc: Exception):

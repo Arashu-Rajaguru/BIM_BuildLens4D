@@ -206,3 +206,41 @@ class CVDetectResponse(BaseModel):
     proposals: List[CVProposal]
     requires_human_review: bool
     explanation: str
+
+
+# ---------------------------------------------------------------------------
+# Image & Building Plan Verification Schemas (FR-026, FR-027, FR-030)
+# ---------------------------------------------------------------------------
+class ImageVerificationElementResult(BaseModel):
+    element_id: str
+    element_type: str
+    label: str
+    spatial_zone: str
+    planned_start: str
+    planned_end: str
+    visual_status: str
+    confidence_score: float
+    is_occluded: bool
+    bounding_box: List[float] # [x, y, w, h] normalized 0..1
+    guardrail_status: str
+    notes: str
+
+class ImageVerificationResponse(BaseModel):
+    verification_id: str
+    project_id: str
+    plan_type: str
+    media_url: str
+    file_hash: str
+    image_metadata: dict
+    total_detected_elements: int
+    verified_complete_count: int
+    in_progress_count: int
+    delayed_count: int
+    occluded_review_count: int
+    compliance_percentage: float
+    overall_verdict: str
+    requires_human_review: bool
+    report_url: str
+    elements: List[ImageVerificationElementResult]
+    created_at: datetime.datetime
+

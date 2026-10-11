@@ -11,6 +11,9 @@
 *.sqlite
 *.sqlite3
 **/.pytest_cache/
+backend/uploads/*
+!backend/uploads/.gitkeep
+
 
 # Node / Vite
 **/node_modules/
