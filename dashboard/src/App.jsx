@@ -2,21 +2,53 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import './App.css';
 import { MOCK_PROJECT, MOCK_SUMMARY, MOCK_ELEMENTS } from './mockData';
 
+export const isMobileDevice = () => {
+  if (typeof window === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  const isCapacitor = Boolean(window.Capacitor);
+  const isMobileUa = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua);
+  const isTouchScreen = ('ontouchstart' in window || navigator.maxTouchPoints > 0) && window.innerWidth <= 820;
+  return isCapacitor || isMobileUa || isTouchScreen;
+};
+
+export const CANDIDATE_BACKENDS = [
+  'https://cluster-correlation-nursery-fiscal.trycloudflare.com/api',
+  'https://buildlens4d.loca.lt/api',
+  'http://192.168.29.102:8000/api',
+  'http://localhost:8000/api'
+];
+
 export const getDefaultApiBase = () => {
   if (typeof window !== 'undefined') {
     const saved = localStorage.getItem('buildlens_backend_url');
-    if (saved && saved.trim()) return saved.trim().replace(/\/+$/, '');
+    if (saved && saved.trim()) {
+      const clean = saved.trim().replace(/\/+$/, '');
+      // If mobile, NEVER allow localhost from old cached localStorage
+      if (isMobileDevice() && (clean.includes('localhost') || clean.includes('127.0.0.1'))) {
+        localStorage.removeItem('buildlens_backend_url');
+      } else {
+        return clean;
+      }
+    }
 
     const origin = window.location.origin;
+    // If running from a remote domain or LAN IP, use that origin directly
+    if (!origin.includes('localhost') && !origin.includes('127.0.0.1') && !origin.startsWith('capacitor:') && !origin.startsWith('ionic:') && !origin.startsWith('file:') && !origin.includes('null')) {
+      return `${origin}/api`;
+    }
+
+    // On mobile devices or Capacitor apps, always default to the live Cloudflare tunnel
+    if (isMobileDevice()) {
+      return 'https://cluster-correlation-nursery-fiscal.trycloudflare.com/api';
+    }
+
+    // Desktop development
     if (window.location.port === '5173') {
       return 'http://localhost:8000/api';
     }
-    if (origin.startsWith('capacitor:') || origin.startsWith('ionic:') || origin === 'file://' || origin.includes('null')) {
-      return 'https://buildlens4d.loca.lt/api';
-    }
     return `${origin}/api`;
   }
-  return 'http://localhost:8000/api';
+  return 'https://cluster-correlation-nursery-fiscal.trycloudflare.com/api';
 };
 
 export const apiFetch = async (endpoint, options = {}, customBase = null, timeoutMs = 12000) => {
@@ -255,7 +287,7 @@ export default function App() {
     }
   };
 
-  // Load all initial project data
+  // Load all initial project data with Auto-Discovery & Resilient Fallback
   const loadData = async (targetMode = mode, targetApiBase = null) => {
     setLoading(true);
     setErrorMsg(null);
@@ -269,28 +301,95 @@ export default function App() {
       return;
     }
 
-    const base = targetApiBase || apiBaseUrl;
+    let base = targetApiBase || apiBaseUrl;
 
+    // Sanity check: On mobile or Capacitor, NEVER use localhost!
+    if (isMobileDevice() && (base.includes('localhost') || base.includes('127.0.0.1'))) {
+      base = 'https://cluster-correlation-nursery-fiscal.trycloudflare.com/api';
+      setApiBaseUrl(base);
+      localStorage.setItem('buildlens_backend_url', base);
+    }
+
+    let activeBase = null;
+    let healthData = null;
+    let latencyMs = 0;
+
+    // 1. Test current primary target base
     try {
       const startTime = performance.now();
-      const healthRes = await apiFetch('/health', {}, base, 8000);
-      if (!healthRes.ok) throw new Error(`Server returned HTTP ${healthRes.status}: ${healthRes.statusText}`);
-      const healthData = await healthRes.json();
-      const latencyMs = Math.round(performance.now() - startTime);
+      const res = await apiFetch('/health', {}, base, 4000);
+      if (res.ok) {
+        healthData = await res.json();
+        latencyMs = Math.round(performance.now() - startTime);
+        activeBase = base;
+      }
+    } catch (e) {
+      console.warn(`Primary backend ${base} unreachable (${e.message}), initiating auto-discovery...`);
+    }
+
+    // 2. If primary target failed, probe candidate backends automatically!
+    if (!activeBase) {
+      const candidatesToProbe = isMobileDevice()
+        ? [
+            'https://cluster-correlation-nursery-fiscal.trycloudflare.com/api',
+            'https://buildlens4d.loca.lt/api',
+            'http://192.168.29.102:8000/api'
+          ]
+        : [
+            'http://localhost:8000/api',
+            'https://cluster-correlation-nursery-fiscal.trycloudflare.com/api',
+            'http://192.168.29.102:8000/api'
+          ];
+
+      for (const candidate of candidatesToProbe) {
+        if (candidate === base) continue;
+        try {
+          const startTime = performance.now();
+          const res = await apiFetch('/health', {}, candidate, 3500);
+          if (res.ok) {
+            healthData = await res.json();
+            latencyMs = Math.round(performance.now() - startTime);
+            activeBase = candidate;
+            console.log(`Auto-discovery succeeded! Connected to ${candidate}`);
+            setApiBaseUrl(candidate);
+            setServerConfigInput(candidate);
+            localStorage.setItem('buildlens_backend_url', candidate);
+            break;
+          }
+        } catch (err) {
+          // Probe next candidate
+        }
+      }
+    }
+
+    if (!activeBase) {
+      console.warn('All candidate backends unreachable, falling back to mock demo mode.');
+      setIsApiOnline(false);
+      setErrorMsg(`Could not connect to FastAPI backend at ${base}. Demonstrator Mock Mode active. Tap ⚙️ in header to select server.`);
+      setProject(MOCK_PROJECT);
+      setSummary(MOCK_SUMMARY);
+      setElements(MOCK_ELEMENTS);
+      setLoading(false);
+      return;
+    }
+
+    // 3. Backend is confirmed online! Fetch project datasets
+    try {
       setServerLatency(latencyMs);
       setServerHealth(healthData);
       setIsApiOnline(true);
+      setErrorMsg(null);
 
       const projId = 'proj-terminal-04';
       const [projRes, sumRes, elemRes, revRes, audRes, repRes, markRes, verRes] = await Promise.all([
-        apiFetch(`/projects/${projId}`, {}, base),
-        apiFetch(`/projects/${projId}/summary`, {}, base),
-        apiFetch(`/projects/${projId}/elements`, {}, base),
-        apiFetch(`/projects/${projId}/reviews`, {}, base),
-        apiFetch(`/projects/${projId}/audit-trail`, {}, base),
-        apiFetch(`/projects/${projId}/report/summary`, {}, base),
-        apiFetch(`/projects/${projId}/markers`, {}, base),
-        apiFetch(`/projects/${projId}/verification-reports`, {}, base)
+        apiFetch(`/projects/${projId}`, {}, activeBase),
+        apiFetch(`/projects/${projId}/summary`, {}, activeBase),
+        apiFetch(`/projects/${projId}/elements`, {}, activeBase),
+        apiFetch(`/projects/${projId}/reviews`, {}, activeBase),
+        apiFetch(`/projects/${projId}/audit-trail`, {}, activeBase),
+        apiFetch(`/projects/${projId}/report/summary`, {}, activeBase),
+        apiFetch(`/projects/${projId}/markers`, {}, activeBase),
+        apiFetch(`/projects/${projId}/verification-reports`, {}, activeBase)
       ]);
 
       if (projRes.ok) setProject(await projRes.json());
@@ -306,9 +405,9 @@ export default function App() {
         if (bmList.length > 0 && !selectedBenchmark) setSelectedBenchmark(bmList[0]);
       }
     } catch (err) {
-      console.warn('Backend unavailable, falling back to mock mode display:', err);
+      console.warn('Backend dataset fetch error:', err);
       setIsApiOnline(false);
-      setErrorMsg(`Could not connect to FastAPI backend at ${base} (${err.name === 'AbortError' ? 'Connection timed out' : err.message}). Showing offline demonstrator data.`);
+      setErrorMsg(`Connected to ${activeBase} but failed to load datasets: ${err.message}`);
       setProject(MOCK_PROJECT);
       setSummary(MOCK_SUMMARY);
       setElements(MOCK_ELEMENTS);
@@ -2193,12 +2292,12 @@ export default function App() {
                     type="button"
                     className="server-preset-btn"
                     onClick={() => {
-                      setServerConfigInput('https://buildlens4d.loca.lt/api');
-                      handleTestAndApplyServer('https://buildlens4d.loca.lt/api');
+                      setServerConfigInput('https://cluster-correlation-nursery-fiscal.trycloudflare.com/api');
+                      handleTestAndApplyServer('https://cluster-correlation-nursery-fiscal.trycloudflare.com/api');
                     }}
                   >
-                    <div style={{ fontWeight: 600, color: '#38bdf8' }}>🌐 Public Tunnel</div>
-                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>buildlens4d.loca.lt</div>
+                    <div style={{ fontWeight: 600, color: '#38bdf8' }}>☁️ Cloudflare Tunnel</div>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>trycloudflare.com (Fast)</div>
                   </button>
 
                   <button
