@@ -1,0 +1,150 @@
+:root {
+  --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-heading: 'Outfit', sans-serif;
+
+  /* Color Palette - Premium Dark Blueprint / Construction */
+  --bg-primary: #0a0e17;
+  --bg-secondary: #111827;
+  --bg-surface: #182234;
+  --bg-surface-hover: #202d44;
+  --bg-surface-elevated: #1e293b;
+  
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-bright: rgba(255, 255, 255, 0.16);
+
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+
+  /* Verification & Schedule Colors */
+  --color-complete: #10b981;
+  --color-complete-bg: rgba(16, 185, 129, 0.12);
+  --color-complete-border: rgba(16, 185, 129, 0.35);
+
+  --color-progress: #f59e0b;
+  --color-progress-bg: rgba(245, 158, 11, 0.12);
+  --color-progress-border: rgba(245, 158, 11, 0.35);
+
+  --color-delayed: #ef4444;
+  --color-delayed-bg: rgba(239, 68, 68, 0.12);
+  --color-delayed-border: rgba(239, 68, 68, 0.35);
+
+  --color-ahead: #0ea5e9;
+  --color-ahead-bg: rgba(14, 165, 233, 0.12);
+  --color-ahead-border: rgba(14, 165, 233, 0.35);
+
+  --color-review: #a855f7;
+  --color-review-bg: rgba(168, 85, 247, 0.12);
+  --color-review-border: rgba(168, 85, 247, 0.35);
+
+  --color-notstarted: #64748b;
+  --color-notstarted-bg: rgba(100, 116, 139, 0.12);
+  --color-notstarted-border: rgba(100, 116, 139, 0.3);
+
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 10px 25px rgba(0, 0, 0, 0.5);
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: var(--font-body);
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-heading);
+  letter-spacing: -0.02em;
+}
+
+/* Base utility classes */
+.container {
+  max-width: 1380px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+/* Glassmorphism Surface */
+.glass-panel {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.glass-panel:hover {
+  border-color: var(--border-bright);
+}
+
+/* Status Badges */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: 9999px;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+.badge-complete {
+  color: var(--color-complete);
+  background: var(--color-complete-bg);
+  border: 1px solid var(--color-complete-border);
+}
+
+.badge-progress {
+  color: var(--color-progress);
+  background: var(--color-progress-bg);
+  border: 1px solid var(--color-progress-border);
+}
+
+.badge-delayed {
+  color: var(--color-delayed);
+  background: var(--color-delayed-bg);
+  border: 1px solid var(--color-delayed-border);
+}
+
+.badge-ahead {
+  color: var(--color-ahead);
+  background: var(--color-ahead-bg);
+  border: 1px solid var(--color-ahead-border);
+}
+
+.badge-review {
+  color: var(--color-review);
+  background: var(--color-review-bg);
+  border: 1px solid var(--color-review-border);
+}
+
+.badge-notstarted {
+  color: var(--color-notstarted);
+  background: var(--color-notstarted-bg);
+  border: 1px solid var(--color-notstarted-border);
+}
+
+/* Pulse animation for review alert */
+@keyframes pulseGlow {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.8; transform: scale(1.02); }
+}
+
+.pulse-review {
+  animation: pulseGlow 2.5s infinite ease-in-out;
+}

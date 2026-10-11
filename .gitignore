@@ -1,0 +1,47 @@
+# Python
+**/__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+**/.venv/
+**/venv/
+**/ENV/
+**/buildlens4d.db
+*.sqlite
+*.sqlite3
+**/.pytest_cache/
+
+# Node / Vite
+**/node_modules/
+**/dist/
+.npm
+*.log
+
+# Unity
+**/[Ll]ibrary/
+**/[Tt]emp/
+**/[Oo]bj/
+**/[Bb]uild/
+**/[Bb]uilds/
+**/[Ll]ogs/
+**/[Uu]ser[Ss]ettings/
+**/MemoryCaptures/
+**/Recordings/
+*.csproj
+*.unityproj
+*.sln
+*.suo
+*.tmp
+*.user
+*.userprefs
+*.pidb
+*.booproj
+.consulo/
+.vs/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini

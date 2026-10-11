@@ -1,0 +1,79 @@
+# BuildLens 4D BIM Architectural Materials
+
+newmtl Mat_Concrete
+Kd 0.80 0.82 0.84
+Ks 0.15 0.15 0.15
+Ns 20.0
+d 1.0
+illum 2
+
+newmtl Mat_DarkSteel
+Kd 0.22 0.26 0.32
+Ks 0.60 0.60 0.65
+Ns 80.0
+d 1.0
+illum 2
+
+newmtl Mat_Glass
+Kd 0.20 0.70 0.90
+Ks 0.85 0.85 0.90
+Ns 95.0
+d 0.45
+illum 2
+
+newmtl Mat_WoodTimber
+Kd 0.72 0.46 0.24
+Ks 0.10 0.10 0.10
+Ns 15.0
+d 1.0
+illum 2
+
+newmtl Mat_GreenTurf
+Kd 0.22 0.58 0.26
+Ks 0.05 0.05 0.05
+Ns 10.0
+d 1.0
+illum 2
+
+newmtl Mat_SolarPanel
+Kd 0.08 0.14 0.38
+Ks 0.75 0.75 0.85
+Ns 90.0
+d 1.0
+illum 2
+
+newmtl Mat_Pavement
+Kd 0.68 0.70 0.72
+Ks 0.10 0.10 0.10
+Ns 15.0
+d 1.0
+illum 2
+
+newmtl Mat_Foundation
+Kd 0.48 0.50 0.52
+Ks 0.10 0.10 0.10
+Ns 10.0
+d 1.0
+illum 2
+
+newmtl Mat_StatusComplete
+Kd 0.10 0.85 0.45
+Ks 0.30 0.30 0.30
+Ns 40.0
+d 0.9
+illum 2
+
+newmtl Mat_StatusDelayed
+Kd 0.90 0.22 0.20
+Ks 0.30 0.30 0.30
+Ns 40.0
+d 0.9
+illum 2
+
+newmtl Mat_StatusReview
+Kd 0.68 0.35 0.95
+Ks 0.30 0.30 0.30
+Ns 40.0
+d 0.9
+illum 2
+

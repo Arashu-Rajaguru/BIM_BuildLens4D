@@ -1,0 +1,226 @@
+# Real-World Urban Building Material Library
+
+newmtl Mat_RedBrick
+Kd 0.72 0.32 0.22
+Ks 0.08 0.08 0.08
+Ns 10.0
+d 1.0
+illum 2
+
+newmtl Mat_LimestoneTrim
+Kd 0.94 0.92 0.86
+Ks 0.15 0.15 0.15
+Ns 25.0
+d 1.0
+illum 2
+
+newmtl Mat_GroundBaseStone
+Kd 0.45 0.48 0.52
+Ks 0.15 0.15 0.15
+Ns 20.0
+d 1.0
+illum 2
+
+newmtl Mat_WindowFrameWhite
+Kd 0.96 0.96 0.94
+Ks 0.25 0.25 0.25
+Ns 35.0
+d 1.0
+illum 2
+
+newmtl Mat_WindowGlassSky
+Kd 0.22 0.60 0.82
+Ks 0.90 0.90 0.95
+Ns 95.0
+d 0.85
+illum 2
+
+newmtl Mat_StorefrontWood
+Kd 0.12 0.26 0.18
+Ks 0.35 0.35 0.35
+Ns 45.0
+d 1.0
+illum 2
+
+newmtl Mat_AwningBurgundy
+Kd 0.72 0.12 0.18
+Ks 0.10 0.10 0.10
+Ns 15.0
+d 1.0
+illum 2
+
+newmtl Mat_AwningNavy
+Kd 0.08 0.26 0.52
+Ks 0.10 0.10 0.10
+Ns 15.0
+d 1.0
+illum 2
+
+newmtl Mat_AwningForest
+Kd 0.12 0.45 0.22
+Ks 0.10 0.10 0.10
+Ns 15.0
+d 1.0
+illum 2
+
+newmtl Mat_AwningAmber
+Kd 0.88 0.58 0.12
+Ks 0.10 0.10 0.10
+Ns 15.0
+d 1.0
+illum 2
+
+newmtl Mat_SignBakery
+Kd 0.92 0.82 0.35
+Ks 0.40 0.40 0.40
+Ns 50.0
+d 1.0
+illum 2
+
+newmtl Mat_SignPharmacy
+Kd 0.15 0.65 0.85
+Ks 0.40 0.40 0.40
+Ns 50.0
+d 1.0
+illum 2
+
+newmtl Mat_FireEscapeBlack
+Kd 0.16 0.18 0.20
+Ks 0.70 0.70 0.75
+Ns 75.0
+d 1.0
+illum 2
+
+newmtl Mat_ACMetalBody
+Kd 0.82 0.84 0.86
+Ks 0.45 0.45 0.50
+Ns 55.0
+d 1.0
+illum 2
+
+newmtl Mat_ACGrilleDark
+Kd 0.22 0.24 0.26
+Ks 0.25 0.25 0.25
+Ns 30.0
+d 1.0
+illum 2
+
+newmtl Mat_WindowAwningWarm
+Kd 0.85 0.48 0.18
+Ks 0.15 0.15 0.15
+Ns 20.0
+d 1.0
+illum 2
+
+newmtl Mat_FlowerPetals
+Kd 0.92 0.18 0.35
+Ks 0.10 0.10 0.10
+Ns 15.0
+d 1.0
+illum 2
+
+newmtl Mat_FlowerFoliage
+Kd 0.18 0.68 0.24
+Ks 0.08 0.08 0.08
+Ns 12.0
+d 1.0
+illum 2
+
+newmtl Mat_WaterTankWood
+Kd 0.58 0.36 0.20
+Ks 0.08 0.08 0.08
+Ns 10.0
+d 1.0
+illum 2
+
+newmtl Mat_RoofGravel
+Kd 0.38 0.40 0.42
+Ks 0.08 0.08 0.08
+Ns 10.0
+d 1.0
+illum 2
+
+newmtl Mat_SidewalkPaver
+Kd 0.78 0.80 0.82
+Ks 0.10 0.10 0.10
+Ns 15.0
+d 1.0
+illum 2
+
+newmtl Mat_StreetAsphalt
+Kd 0.20 0.22 0.25
+Ks 0.10 0.10 0.10
+Ns 15.0
+d 1.0
+illum 2
+
+newmtl Mat_RoadMarking
+Kd 0.95 0.95 0.95
+Ks 0.20 0.20 0.20
+Ns 25.0
+d 1.0
+illum 2
+
+newmtl Mat_FireHydrantRed
+Kd 0.88 0.10 0.12
+Ks 0.60 0.60 0.60
+Ns 65.0
+d 1.0
+illum 2
+
+newmtl Mat_LamppostBlack
+Kd 0.14 0.16 0.18
+Ks 0.65 0.65 0.70
+Ns 70.0
+d 1.0
+illum 2
+
+newmtl Mat_LampGlowYellow
+Kd 1.00 0.88 0.40
+Ks 0.85 0.85 0.90
+Ns 90.0
+d 1.0
+illum 2
+
+newmtl Mat_TreeTrunkBrown
+Kd 0.38 0.25 0.15
+Ks 0.05 0.05 0.05
+Ns 10.0
+d 1.0
+illum 2
+
+newmtl Mat_TreeLeafGreen
+Kd 0.16 0.58 0.22
+Ks 0.08 0.08 0.08
+Ns 15.0
+d 1.0
+illum 2
+
+newmtl Mat_StatusComplete
+Kd 0.08 0.85 0.40
+Ks 0.35 0.35 0.35
+Ns 50.0
+d 1.0
+illum 2
+
+newmtl Mat_StatusDelayed
+Kd 0.92 0.15 0.12
+Ks 0.35 0.35 0.35
+Ns 50.0
+d 1.0
+illum 2
+
+newmtl Mat_StatusReview
+Kd 0.70 0.22 0.95
+Ks 0.35 0.35 0.35
+Ns 50.0
+d 1.0
+illum 2
+
+newmtl Mat_StatusProgress
+Kd 0.98 0.72 0.10
+Ks 0.35 0.35 0.35
+Ns 50.0
+d 1.0
+illum 2
+

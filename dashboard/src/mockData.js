@@ -1,0 +1,146 @@
+// Realistic demonstration mock data conforming to SRS Section 5 & 8
+export const MOCK_PROJECT = {
+  id: "proj-terminal-04",
+  name: "Metro Station Box - Terminal 4",
+  description: "Subsurface reinforced concrete concourse and track-level platform structure.",
+  location: "Zone 3, Central Transit Hub",
+  timezone: "UTC",
+  lifecycle_state: "active"
+};
+
+export const MOCK_SUMMARY = {
+  project_id: "proj-terminal-04",
+  project_name: "Metro Station Box - Terminal 4",
+  total_elements: 8,
+  verified_complete: 3,
+  in_progress: 2,
+  potentially_delayed: 1,
+  ahead_of_schedule: 0,
+  needs_manual_review: 1,
+  not_started: 1,
+  completion_percentage: 37.5,
+  computed_at: "2026-10-09T05:30:00Z"
+};
+
+export const MOCK_ELEMENTS = [
+  {
+    id: "COL-B1-01",
+    project_id: "proj-terminal-04",
+    element_type: "Column",
+    label: "Track Level Heavy Column Grid A1",
+    spatial_zone: "Concourse Level / Grid A-1",
+    model_version_id: "v1.0",
+    planned_start: "2026-09-01",
+    planned_end: "2026-09-20",
+    verification_state: "verified_complete",
+    last_inspected_at: "2026-09-18T10:30:00Z",
+    latest_note: "Reinforcement rebar inspected and certified; concrete pour finished and cured.",
+    confidence: 0.98,
+    evidence_url: "mock_evidence/col_b1_01_complete.jpg"
+  },
+  {
+    id: "COL-B1-02",
+    project_id: "proj-terminal-04",
+    element_type: "Column",
+    label: "Track Level Heavy Column Grid A2",
+    spatial_zone: "Concourse Level / Grid A-2",
+    model_version_id: "v1.0",
+    planned_start: "2026-09-05",
+    planned_end: "2026-09-25",
+    verification_state: "verified_complete",
+    last_inspected_at: "2026-09-22T14:15:00Z",
+    latest_note: "Cylindrical column cast in-situ. Ultrasonic non-destructive testing passed.",
+    confidence: 0.95,
+    evidence_url: "mock_evidence/col_b1_02_complete.jpg"
+  },
+  {
+    id: "COL-B1-03",
+    project_id: "proj-terminal-04",
+    element_type: "Column",
+    label: "Concourse Central Pillar Grid B1",
+    spatial_zone: "Concourse Level / Grid B-1",
+    model_version_id: "v1.0",
+    planned_start: "2026-09-15",
+    planned_end: "2026-10-02",
+    verification_state: "potentially_delayed",
+    last_inspected_at: "2026-10-08T16:45:00Z",
+    latest_note: "Formwork 75% complete; rebar cage partially assembled. Delayed due to rebar delivery wait.",
+    confidence: 0.88,
+    evidence_url: "mock_evidence/col_b1_03_delayed.jpg"
+  },
+  {
+    id: "BM-L1-01",
+    project_id: "proj-terminal-04",
+    element_type: "Beam",
+    label: "Longitudinal Transfer Beam Grid A1-A2",
+    spatial_zone: "Mezzanine Level / Spans A1-A2",
+    model_version_id: "v1.0",
+    planned_start: "2026-09-25",
+    planned_end: "2026-10-15",
+    verification_state: "in_progress",
+    last_inspected_at: "2026-10-07T11:20:00Z",
+    latest_note: "Falsework scaffolding erected; post-tensioning ducts placed.",
+    confidence: 0.92,
+    evidence_url: "mock_evidence/bm_l1_01_progress.jpg"
+  },
+  {
+    id: "SLB-L1-01",
+    project_id: "proj-terminal-04",
+    element_type: "Slab",
+    label: "Ticket Hall Suspended Slab Bay 1",
+    spatial_zone: "Ticket Hall Level / Bay 1",
+    model_version_id: "v1.0",
+    planned_start: "2026-10-05",
+    planned_end: "2026-10-25",
+    verification_state: "in_progress",
+    last_inspected_at: "2026-10-08T09:00:00Z",
+    latest_note: "Decking panels installed. Mesh reinforcement laying in progress.",
+    confidence: 0.89,
+    evidence_url: "mock_evidence/slb_l1_01_decking.jpg"
+  },
+  {
+    id: "WL-RET-01",
+    project_id: "proj-terminal-04",
+    element_type: "Wall",
+    label: "Perimeter Diaphragm Retaining Wall North",
+    spatial_zone: "Perimeter North / Shoring Line",
+    model_version_id: "v1.0",
+    planned_start: "2026-08-15",
+    planned_end: "2026-09-10",
+    verification_state: "verified_complete",
+    last_inspected_at: "2026-09-08T15:00:00Z",
+    latest_note: "Guide walls and panel slurries completed and grouted.",
+    confidence: 0.99,
+    evidence_url: "mock_evidence/wl_ret_01_complete.jpg"
+  },
+  {
+    id: "BM-L1-02",
+    project_id: "proj-terminal-04",
+    element_type: "Beam",
+    label: "Transverse Header Beam Grid B1-B2",
+    spatial_zone: "Mezzanine Level / Spans B1-B2",
+    model_version_id: "v1.0",
+    planned_start: "2026-09-28",
+    planned_end: "2026-10-12",
+    verification_state: "needs_manual_review",
+    last_inspected_at: "2026-10-08T17:10:00Z",
+    latest_note: "Field camera obstructed by mobile crane arm and safety netting. Cannot confirm beam seating.",
+    confidence: 0.40,
+    evidence_url: "mock_evidence/bm_l1_02_occluded.jpg"
+  },
+  {
+    id: "FTG-P1-01",
+    project_id: "proj-terminal-04",
+    element_type: "Footing",
+    label: "Deep Pile Cap Foundation P1",
+    spatial_zone: "Sub-foundation Level / Pier 1",
+    model_version_id: "v1.0",
+    planned_start: "2026-10-18",
+    planned_end: "2026-11-05",
+    verification_state: "not_started",
+    last_inspected_at: null,
+    latest_note: null,
+    confidence: 0.0,
+    evidence_url: null
+  }
+];
