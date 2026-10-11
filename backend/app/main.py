@@ -40,13 +40,14 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Configure CORS for React dashboard and Unity AR client
+# Configure CORS for React mobile PWA, Unity AR client, and external tunnels
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"] if settings.ENVIRONMENT == "development" else settings.cors_origins,
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 import os

@@ -2,11 +2,64 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import './App.css';
 import { MOCK_PROJECT, MOCK_SUMMARY, MOCK_ELEMENTS } from './mockData';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 
-  (typeof window !== 'undefined' ? `${window.location.origin}/api` : 'http://localhost:8000/api');
+export const getDefaultApiBase = () => {
+  if (typeof window !== 'undefined') {
+    const saved = localStorage.getItem('buildlens_backend_url');
+    if (saved && saved.trim()) return saved.trim().replace(/\/+$/, '');
 
+    const origin = window.location.origin;
+    if (window.location.port === '5173') {
+      return 'http://localhost:8000/api';
+    }
+    if (origin.startsWith('capacitor:') || origin.startsWith('ionic:') || origin === 'file://' || origin.includes('null')) {
+      return 'https://buildlens4d.loca.lt/api';
+    }
+    return `${origin}/api`;
+  }
+  return 'http://localhost:8000/api';
+};
+
+export const apiFetch = async (endpoint, options = {}, customBase = null, timeoutMs = 12000) => {
+  const base = (customBase || getDefaultApiBase()).replace(/\/+$/, '');
+  const url = endpoint.startsWith('http') ? endpoint : `${base}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  const existingHeaders = options.headers || {};
+  const isFormData = options.body instanceof FormData;
+
+  const headers = {
+    'Bypass-Tunnel-Reminder': '1',
+    'bypass-tunnel-reminder': '1',
+    ...existingHeaders
+  };
+
+  if (!isFormData && !headers['Content-Type'] && options.body && typeof options.body === 'string') {
+    headers['Content-Type'] = 'application/json';
+  }
+
+  try {
+    const res = await fetch(url, {
+      ...options,
+      headers,
+      signal: controller.signal
+    });
+    return res;
+  } finally {
+    clearTimeout(timer);
+  }
+};
 
 export default function App() {
+  const [apiBaseUrl, setApiBaseUrl] = useState(getDefaultApiBase);
+  const [serverLatency, setServerLatency] = useState(null);
+  const [serverHealth, setServerHealth] = useState(null);
+  const [showServerConfigModal, setShowServerConfigModal] = useState(false);
+  const [serverConfigInput, setServerConfigInput] = useState(getDefaultApiBase);
+  const [testingConnection, setTestingConnection] = useState(false);
+  const [testResult, setTestResult] = useState(null);
+
   const [activeTab, setActiveTab] = useState('overview'); // 'overview', 'scrubber', 'review_queue', 'cv_scanner', 'markers', 'audit_trail', 'reports'
   const [mode, setMode] = useState('live'); // 'live' or 'mock'
   const [isApiOnline, setIsApiOnline] = useState(false);
@@ -138,10 +191,10 @@ export default function App() {
       formData.append('observer_id', verificationObserver);
 
       const projId = 'proj-terminal-04';
-      const res = await fetch(`${API_BASE}/projects/${projId}/verify-image`, {
+      const res = await apiFetch(`/projects/${projId}/verify-image`, {
         method: 'POST',
         body: formData
-      });
+      }, apiBaseUrl, 30000);
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
@@ -163,7 +216,7 @@ export default function App() {
   const loadVerificationHistory = async () => {
     try {
       const projId = 'proj-terminal-04';
-      const res = await fetch(`${API_BASE}/projects/${projId}/verification-reports`);
+      const res = await apiFetch(`/projects/${projId}/verification-reports`, {}, apiBaseUrl);
       if (res.ok) {
         setVerificationHistory(await res.json());
       }
@@ -172,8 +225,38 @@ export default function App() {
     }
   };
 
+  const handleTestAndApplyServer = async (testUrl = serverConfigInput) => {
+    setTestingConnection(true);
+    setTestResult(null);
+    const cleanUrl = testUrl.trim().replace(/\/+$/, '');
+    try {
+      const startTime = performance.now();
+      const res = await apiFetch('/health', {}, cleanUrl, 8000);
+      if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+      const data = await res.json();
+      const latency = Math.round(performance.now() - startTime);
+
+      localStorage.setItem('buildlens_backend_url', cleanUrl);
+      setApiBaseUrl(cleanUrl);
+      setServerConfigInput(cleanUrl);
+      setServerLatency(latency);
+      setServerHealth(data);
+      setIsApiOnline(true);
+      setErrorMsg(null);
+      setTestResult({ success: true, message: `Connected! Latency: ${latency}ms | DB: ${data.database || 'connected'}` });
+      await loadData('live', cleanUrl);
+    } catch (err) {
+      setTestResult({
+        success: false,
+        message: `Connection failed: ${err.name === 'AbortError' ? 'Connection timed out (8s)' : err.message}`
+      });
+    } finally {
+      setTestingConnection(false);
+    }
+  };
+
   // Load all initial project data
-  const loadData = async (targetMode = mode) => {
+  const loadData = async (targetMode = mode, targetApiBase = null) => {
     setLoading(true);
     setErrorMsg(null);
 
@@ -186,21 +269,28 @@ export default function App() {
       return;
     }
 
+    const base = targetApiBase || apiBaseUrl;
+
     try {
-      const healthRes = await fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(3000) });
-      if (!healthRes.ok) throw new Error('API server reported unhealthy status');
+      const startTime = performance.now();
+      const healthRes = await apiFetch('/health', {}, base, 8000);
+      if (!healthRes.ok) throw new Error(`Server returned HTTP ${healthRes.status}: ${healthRes.statusText}`);
+      const healthData = await healthRes.json();
+      const latencyMs = Math.round(performance.now() - startTime);
+      setServerLatency(latencyMs);
+      setServerHealth(healthData);
       setIsApiOnline(true);
 
       const projId = 'proj-terminal-04';
       const [projRes, sumRes, elemRes, revRes, audRes, repRes, markRes, verRes] = await Promise.all([
-        fetch(`${API_BASE}/projects/${projId}`),
-        fetch(`${API_BASE}/projects/${projId}/summary`),
-        fetch(`${API_BASE}/projects/${projId}/elements`),
-        fetch(`${API_BASE}/projects/${projId}/reviews`),
-        fetch(`${API_BASE}/projects/${projId}/audit-trail`),
-        fetch(`${API_BASE}/projects/${projId}/report/summary`),
-        fetch(`${API_BASE}/projects/${projId}/markers`),
-        fetch(`${API_BASE}/projects/${projId}/verification-reports`)
+        apiFetch(`/projects/${projId}`, {}, base),
+        apiFetch(`/projects/${projId}/summary`, {}, base),
+        apiFetch(`/projects/${projId}/elements`, {}, base),
+        apiFetch(`/projects/${projId}/reviews`, {}, base),
+        apiFetch(`/projects/${projId}/audit-trail`, {}, base),
+        apiFetch(`/projects/${projId}/report/summary`, {}, base),
+        apiFetch(`/projects/${projId}/markers`, {}, base),
+        apiFetch(`/projects/${projId}/verification-reports`, {}, base)
       ]);
 
       if (projRes.ok) setProject(await projRes.json());
@@ -218,7 +308,7 @@ export default function App() {
     } catch (err) {
       console.warn('Backend unavailable, falling back to mock mode display:', err);
       setIsApiOnline(false);
-      setErrorMsg(`Could not connect to FastAPI backend at ${API_BASE}. Demonstrator Mock Mode active.`);
+      setErrorMsg(`Could not connect to FastAPI backend at ${base} (${err.name === 'AbortError' ? 'Connection timed out' : err.message}). Showing offline demonstrator data.`);
       setProject(MOCK_PROJECT);
       setSummary(MOCK_SUMMARY);
       setElements(MOCK_ELEMENTS);
@@ -231,7 +321,7 @@ export default function App() {
   const fetchSimulation = async (dateStr) => {
     try {
       const projId = 'proj-terminal-04';
-      const res = await fetch(`${API_BASE}/projects/${projId}/simulation?target_date=${dateStr}`);
+      const res = await apiFetch(`/projects/${projId}/simulation?target_date=${dateStr}`, {}, apiBaseUrl);
       if (res.ok) {
         setSimulationData(await res.json());
       }
@@ -271,7 +361,7 @@ export default function App() {
     setEvidenceLoading(true);
     try {
       const projId = 'proj-terminal-04';
-      const res = await fetch(`${API_BASE}/projects/${projId}/elements/${elemId}/evidence`);
+      const res = await apiFetch(`/projects/${projId}/elements/${elemId}/evidence`, {}, apiBaseUrl);
       if (res.ok) {
         setElementEvidences(await res.json());
       } else {
@@ -307,10 +397,10 @@ export default function App() {
     setUploadingEvidence(true);
     try {
       const projId = 'proj-terminal-04';
-      const res = await fetch(`${API_BASE}/projects/${projId}/elements/${inspectElement.id}/evidence`, {
+      const res = await apiFetch(`/projects/${projId}/elements/${inspectElement.id}/evidence`, {
         method: 'POST',
         body: formData
-      });
+      }, apiBaseUrl, 25000);
       if (!res.ok) {
         const err = await res.json();
         throw new Error(err.detail || 'Upload failed');
@@ -330,7 +420,7 @@ export default function App() {
   const handleUpdateObservation = async (elementId, reportedState, notes) => {
     try {
       const projId = 'proj-terminal-04';
-      const res = await fetch(`${API_BASE}/projects/${projId}/observations`, {
+      const res = await apiFetch(`/projects/${projId}/observations`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -340,7 +430,7 @@ export default function App() {
           confidence_score: reportedState === 'occluded' ? 0.45 : 0.95,
           notes: notes || `Field observation updated from Web Dashboard (${reportedState})`
         })
-      });
+      }, apiBaseUrl);
       if (!res.ok) {
         const err = await res.json();
         throw new Error(err.detail || 'Failed to submit observation');
@@ -362,7 +452,7 @@ export default function App() {
     setReviewSubmitting(true);
     try {
       const projId = 'proj-terminal-04';
-      const res = await fetch(`${API_BASE}/projects/${projId}/reviews`, {
+      const res = await apiFetch(`/projects/${projId}/reviews`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -371,7 +461,7 @@ export default function App() {
           decision: reviewDecisionType,
           reason: reviewReason
         })
-      });
+      }, apiBaseUrl);
       if (!res.ok) {
         const err = await res.json();
         throw new Error(err.detail || 'Failed to submit review decision');
@@ -391,7 +481,7 @@ export default function App() {
     setCvAnalyzing(true);
     try {
       const projId = 'proj-terminal-04';
-      const res = await fetch(`${API_BASE}/projects/${projId}/cv-detect`, {
+      const res = await apiFetch(`/projects/${projId}/cv-detect`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -399,7 +489,7 @@ export default function App() {
           simulated_confidence: parseFloat(cvConfidence),
           simulated_occlusion: cvOccluded
         })
-      });
+      }, apiBaseUrl);
       if (!res.ok) {
         const err = await res.json();
         throw new Error(err.detail || 'Failed to analyze element');
@@ -501,15 +591,24 @@ export default function App() {
               </button>
             </div>
 
-            <div className="api-status-chip">
+            <button
+              type="button"
+              className="api-status-chip api-status-chip-btn"
+              onClick={() => {
+                setServerConfigInput(apiBaseUrl);
+                setShowServerConfigModal(true);
+              }}
+              title="Server connection & network diagnostics (Tap to configure)"
+            >
               <span className={`status-dot ${isApiOnline ? 'dot-online' : 'dot-offline'}`} />
               <span className="status-label status-label-full">
-                {isApiOnline ? 'Backend Online (Port 8000)' : 'Backend Offline'}
+                {isApiOnline ? `Live (${serverLatency ? `${serverLatency}ms` : 'Connected'})` : 'Backend Offline (Tap to Fix)'}
               </span>
               <span className="status-label status-label-short">
-                {isApiOnline ? 'Online' : 'Offline'}
+                {isApiOnline ? (serverLatency ? `${serverLatency}ms` : 'Live') : 'Offline'}
               </span>
-            </div>
+              <span style={{ fontSize: '0.75rem', opacity: 0.7, marginLeft: '3px' }}>⚙️</span>
+            </button>
 
             {!isAppInstalled && (
               <button
@@ -823,7 +922,7 @@ export default function App() {
                   {verificationResult && (
                     <div className="verification-quick-actions">
                       <a
-                        href={verificationResult.report_url.startsWith('http') ? verificationResult.report_url : `${API_BASE.replace('/api', '')}${verificationResult.report_url}`}
+                        href={verificationResult.report_url.startsWith('http') ? verificationResult.report_url : `${apiBaseUrl.replace('/api', '')}${verificationResult.report_url}`}
                         target="_blank"
                         rel="noreferrer"
                         className="download-report-btn"
@@ -975,7 +1074,7 @@ export default function App() {
 
                     <div className="interactive-overlay-viewport">
                       <img
-                        src={verificationResult.media_url.startsWith('http') ? verificationResult.media_url : `${API_BASE.replace('/api', '')}${verificationResult.media_url}`}
+                        src={verificationResult.media_url.startsWith('http') ? verificationResult.media_url : `${apiBaseUrl.replace('/api', '')}${verificationResult.media_url}`}
                         alt="Analyzed Building"
                         className="analyzed-base-img"
                       />
@@ -1020,7 +1119,7 @@ export default function App() {
                         </p>
                       </div>
                       <a
-                        href={verificationResult.report_url.startsWith('http') ? verificationResult.report_url : `${API_BASE.replace('/api', '')}${verificationResult.report_url}`}
+                        href={verificationResult.report_url.startsWith('http') ? verificationResult.report_url : `${apiBaseUrl.replace('/api', '')}${verificationResult.report_url}`}
                         target="_blank"
                         rel="noreferrer"
                         className="download-report-btn"
@@ -1130,7 +1229,7 @@ export default function App() {
                           <span>{new Date(rep.created_at).toLocaleDateString()}</span>
                         </div>
                         <a
-                          href={rep.report_url.startsWith('http') ? rep.report_url : `${API_BASE.replace('/api', '')}${rep.report_url}`}
+                          href={rep.report_url.startsWith('http') ? rep.report_url : `${apiBaseUrl.replace('/api', '')}${rep.report_url}`}
                           target="_blank"
                           rel="noreferrer"
                           className="history-view-link"
@@ -1641,7 +1740,7 @@ export default function App() {
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                     <h3 className="panel-title">{selectedBenchmark.marker_id} Surveyor Target Card</h3>
                     <a
-                      href={`${API_BASE}/projects/proj-terminal-04/markers/${selectedBenchmark.marker_id}/svg`}
+                      href={`${apiBaseUrl}/projects/proj-terminal-04/markers/${selectedBenchmark.marker_id}/svg`}
                       target="_blank"
                       rel="noreferrer"
                       className="download-csv-btn"
@@ -1653,7 +1752,7 @@ export default function App() {
 
                   <div className="target-svg-wrapper">
                     <img
-                      src={`${API_BASE}/projects/proj-terminal-04/markers/${selectedBenchmark.marker_id}/svg`}
+                      src={`${apiBaseUrl}/projects/proj-terminal-04/markers/${selectedBenchmark.marker_id}/svg`}
                       alt="Survey Target"
                       className="target-svg-img"
                     />
@@ -1765,7 +1864,7 @@ export default function App() {
                   </p>
                 </div>
                 <a
-                  href={`${API_BASE}/projects/proj-terminal-04/export/csv`}
+                  href={`${apiBaseUrl}/projects/proj-terminal-04/export/csv`}
                   target="_blank"
                   rel="noreferrer"
                   className="download-csv-btn"
@@ -1853,7 +1952,7 @@ export default function App() {
                 <div className="evidence-thumbnails-grid">
                   {elementEvidences.map((evi) => (
                     <div key={evi.id} className="evidence-thumb-card">
-                      <img src={evi.media_url.startsWith('http') ? evi.media_url : `${API_BASE.replace('/api', '')}${evi.media_url}`} alt="Site Evidence" className="evidence-img" />
+                      <img src={evi.media_url.startsWith('http') ? evi.media_url : `${apiBaseUrl.replace('/api', '')}${evi.media_url}`} alt="Site Evidence" className="evidence-img" />
                       <div className="evidence-meta">
                         <div>{new Date(evi.captured_at).toLocaleDateString()}</div>
                         <div style={{ fontFamily: 'monospace', fontSize: '0.65rem' }}>SHA: {evi.file_hash.substring(0, 8)}...</div>
@@ -1990,6 +2089,170 @@ export default function App() {
             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
               <button className="action-btn" onClick={() => setShowInstallGuide(false)}>
                 Got it
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Backend Server Connection & Diagnostics Modal */}
+      {showServerConfigModal && (
+        <div className="modal-backdrop" onClick={() => setShowServerConfigModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '520px' }}>
+            <div className="modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span style={{ fontSize: '1.5rem' }}>🔌</span>
+                <div>
+                  <h3 style={{ margin: 0 }}>Backend Connection Diagnostics</h3>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                    Port 8000 & Cloud Tunnel Synchronization
+                  </div>
+                </div>
+              </div>
+              <button className="close-btn" onClick={() => setShowServerConfigModal(false)}>✕</button>
+            </div>
+
+            <div style={{ padding: '8px 0', fontSize: '0.88rem' }}>
+              {/* Current Status Box */}
+              <div style={{
+                background: isApiOnline ? 'rgba(16, 185, 129, 0.08)' : 'rgba(239, 68, 68, 0.08)',
+                border: `1px solid ${isApiOnline ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
+                borderRadius: '8px',
+                padding: '12px 14px',
+                marginBottom: '16px'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span className={`status-dot ${isApiOnline ? 'dot-online' : 'dot-offline'}`} />
+                    <strong style={{ color: isApiOnline ? '#34d399' : '#f87171' }}>
+                      {isApiOnline ? 'Backend Online & Synchronized' : 'Backend Disconnected'}
+                    </strong>
+                  </div>
+                  {serverLatency && (
+                    <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontFamily: 'monospace' }}>
+                      {serverLatency}ms ping
+                    </span>
+                  )}
+                </div>
+                {serverHealth && (
+                  <div style={{ marginTop: '8px', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                    Database: <span style={{ color: '#38bdf8' }}>{serverHealth.database}</span> &bull; Version: <span style={{ color: '#38bdf8' }}>{serverHealth.version}</span> &bull; Status: <span style={{ color: '#34d399' }}>{serverHealth.status}</span>
+                  </div>
+                )}
+                {errorMsg && !isApiOnline && (
+                  <div style={{ marginTop: '6px', fontSize: '0.75rem', color: '#fca5a5' }}>
+                    {errorMsg}
+                  </div>
+                )}
+              </div>
+
+              {/* Target Server URL Input */}
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>
+                  Active API Endpoint URL:
+                </label>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <input
+                    type="text"
+                    value={serverConfigInput}
+                    onChange={(e) => setServerConfigInput(e.target.value)}
+                    placeholder="https://.../api or http://192.168...:8000/api"
+                    className="form-input"
+                    style={{ flex: 1, fontFamily: 'monospace', fontSize: '0.82rem' }}
+                  />
+                  <button
+                    className="action-btn"
+                    onClick={() => handleTestAndApplyServer(serverConfigInput)}
+                    disabled={testingConnection}
+                    style={{ whiteSpace: 'nowrap' }}
+                  >
+                    {testingConnection ? 'Testing...' : '⚡ Test & Connect'}
+                  </button>
+                </div>
+                {testResult && (
+                  <div style={{
+                    marginTop: '8px',
+                    fontSize: '0.8rem',
+                    color: testResult.success ? '#34d399' : '#f87171',
+                    padding: '6px 10px',
+                    borderRadius: '6px',
+                    background: testResult.success ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)'
+                  }}>
+                    {testResult.message}
+                  </div>
+                )}
+              </div>
+
+              {/* Quick Preset Buttons */}
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                  Quick Connection Presets:
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
+                  <button
+                    type="button"
+                    className="server-preset-btn"
+                    onClick={() => {
+                      setServerConfigInput('https://buildlens4d.loca.lt/api');
+                      handleTestAndApplyServer('https://buildlens4d.loca.lt/api');
+                    }}
+                  >
+                    <div style={{ fontWeight: 600, color: '#38bdf8' }}>🌐 Public Tunnel</div>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>buildlens4d.loca.lt</div>
+                  </button>
+
+                  <button
+                    type="button"
+                    className="server-preset-btn"
+                    onClick={() => {
+                      setServerConfigInput('http://192.168.29.102:8000/api');
+                      handleTestAndApplyServer('http://192.168.29.102:8000/api');
+                    }}
+                  >
+                    <div style={{ fontWeight: 600, color: '#34d399' }}>📶 Local Wi-Fi</div>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>192.168.29.102:8000</div>
+                  </button>
+
+                  <button
+                    type="button"
+                    className="server-preset-btn"
+                    onClick={() => {
+                      setServerConfigInput('http://localhost:8000/api');
+                      handleTestAndApplyServer('http://localhost:8000/api');
+                    }}
+                  >
+                    <div style={{ fontWeight: 600, color: '#a78bfa' }}>💻 Local PC</div>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>localhost:8000</div>
+                  </button>
+
+                  <button
+                    type="button"
+                    className="server-preset-btn"
+                    onClick={() => {
+                      const auto = `${window.location.origin}/api`;
+                      setServerConfigInput(auto);
+                      handleTestAndApplyServer(auto);
+                    }}
+                  >
+                    <div style={{ fontWeight: 600, color: '#f59e0b' }}>🔄 Auto-Detect</div>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Current Origin /api</div>
+                  </button>
+                </div>
+              </div>
+
+              {/* Mobile Help Note */}
+              <div style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '10px 12px', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                💡 <strong>Phone Connection Tip:</strong>
+                <ul style={{ margin: '4px 0 0 16px', padding: 0 }}>
+                  <li>On same Wi-Fi: Tap <strong>Local Wi-Fi</strong> for maximum speed.</li>
+                  <li>On mobile data: Tap <strong>Public Tunnel</strong> to route via HTTPS.</li>
+                </ul>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '12px' }}>
+              <button className="action-btn" onClick={() => setShowServerConfigModal(false)}>
+                Done
               </button>
             </div>
           </div>
