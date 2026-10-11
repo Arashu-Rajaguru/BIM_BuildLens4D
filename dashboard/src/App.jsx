@@ -344,6 +344,7 @@ export default function App() {
   return (
     <div className="app-wrapper">
       {/* Top Application Header */}
+      {/* Top Application Header */}
       <header className="app-header">
         <div className="container header-container">
           <div className="brand-section">
@@ -357,7 +358,7 @@ export default function App() {
                 BuildLens 4D
                 <span className="brand-pill">SRS v1.0 Compliant</span>
               </div>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+              <div className="brand-subtitle">
                 Field-to-BIM Progress Tracking & Verification System
               </div>
             </div>
@@ -370,21 +371,26 @@ export default function App() {
                 onClick={() => setMode('live')}
                 title="Connect directly to FastAPI Backend on port 8000"
               >
-                Live Backend
+                <span className="mode-label-full">Live Backend</span>
+                <span className="mode-label-short">Live</span>
               </button>
               <button
                 className={`mode-btn ${mode === 'mock' ? 'active' : ''}`}
                 onClick={() => setMode('mock')}
                 title="Demonstration Offline Mock Mode"
               >
-                Mock Demo
+                <span className="mode-label-full">Mock Demo</span>
+                <span className="mode-label-short">Mock</span>
               </button>
             </div>
 
             <div className="api-status-chip">
               <span className={`status-dot ${isApiOnline ? 'dot-online' : 'dot-offline'}`} />
-              <span className="status-label">
+              <span className="status-label status-label-full">
                 {isApiOnline ? 'Backend Online (Port 8000)' : 'Backend Offline'}
+              </span>
+              <span className="status-label status-label-short">
+                {isApiOnline ? 'Online' : 'Offline'}
               </span>
             </div>
 
@@ -392,7 +398,7 @@ export default function App() {
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" />
               </svg>
-              Sync
+              <span>Sync</span>
             </button>
           </div>
         </div>
@@ -580,47 +586,90 @@ export default function App() {
                 </div>
 
                 <div className="elements-table-wrapper">
-                  <table className="elements-table">
-                    <thead>
-                      <tr>
-                        <th>Element ID</th>
-                        <th>Type</th>
-                        <th>Design Label</th>
-                        <th>Spatial Zone</th>
-                        <th>4D Schedule Window</th>
-                        <th>Verification State</th>
-                        <th>Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredElements.map((el) => {
+                  <div className="desktop-table-view">
+                    <table className="elements-table">
+                      <thead>
+                        <tr>
+                          <th>Element ID</th>
+                          <th>Type</th>
+                          <th>Design Label</th>
+                          <th>Spatial Zone</th>
+                          <th>4D Schedule Window</th>
+                          <th>Verification State</th>
+                          <th>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredElements.map((el) => {
+                          const styleInfo = stateColors[el.verification_state] || stateColors.not_started;
+                          return (
+                            <tr key={el.id}>
+                              <td className="element-id-cell">{el.id}</td>
+                              <td><span className="type-tag">{el.element_type}</span></td>
+                              <td className="label-cell">{el.label}</td>
+                              <td className="zone-cell">{el.spatial_zone || 'General'}</td>
+                              <td className="schedule-cell">{el.planned_start} → {el.planned_end}</td>
+                              <td>
+                                <span className={`state-badge ${styleInfo.badge}`}>
+                                  <span>{styleInfo.icon}</span>
+                                  {styleInfo.label}
+                                </span>
+                              </td>
+                              <td>
+                                <button
+                                  className="table-action-btn"
+                                  onClick={() => handleOpenInspect(el)}
+                                >
+                                  🔍 Inspect / Evidence
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Mobile Touch Cards View (Shown on screens < 768px) */}
+                  <div className="mobile-cards-view">
+                    {filteredElements.length === 0 ? (
+                      <div className="mobile-empty-hint">No elements match the current filters.</div>
+                    ) : (
+                      filteredElements.map((el) => {
                         const styleInfo = stateColors[el.verification_state] || stateColors.not_started;
                         return (
-                          <tr key={el.id}>
-                            <td className="element-id-cell">{el.id}</td>
-                            <td><span className="type-tag">{el.element_type}</span></td>
-                            <td className="label-cell">{el.label}</td>
-                            <td className="zone-cell">{el.spatial_zone || 'General'}</td>
-                            <td className="schedule-cell">{el.planned_start} → {el.planned_end}</td>
-                            <td>
+                          <div key={el.id} className="mobile-element-card">
+                            <div className="mobile-card-top">
+                              <span className="element-id-cell">{el.id}</span>
                               <span className={`state-badge ${styleInfo.badge}`}>
                                 <span>{styleInfo.icon}</span>
                                 {styleInfo.label}
                               </span>
-                            </td>
-                            <td>
+                            </div>
+                            <div className="mobile-card-body">
+                              <h4 className="mobile-card-title">{el.label}</h4>
+                              <div className="mobile-card-tags">
+                                <span className="type-tag">{el.element_type}</span>
+                                <span className="zone-pill">{el.spatial_zone || 'General'}</span>
+                              </div>
+                              <div className="mobile-card-schedule">
+                                <span className="sched-icon">📅</span>
+                                <span>{el.planned_start} → {el.planned_end}</span>
+                              </div>
+                            </div>
+                            <div className="mobile-card-actions">
                               <button
-                                className="table-action-btn"
+                                className="mobile-action-btn"
                                 onClick={() => handleOpenInspect(el)}
                               >
-                                🔍 Inspect / Evidence
+                                🔍 Inspect / Evidence Photos & 3D Sync
                               </button>
-                            </td>
-                          </tr>
+                            </div>
+                          </div>
                         );
-                      })}
-                    </tbody>
-                  </table>
+                      })
+                    )}
+                  </div>
                 </div>
               </section>
             </>
@@ -710,45 +759,82 @@ export default function App() {
                   Simulated 4D Element States as of {scrubberDate}
                 </h3>
                 <div className="elements-table-wrapper">
-                  <table className="elements-table">
-                    <thead>
-                      <tr>
-                        <th>Element ID</th>
-                        <th>Type</th>
-                        <th>Spatial Zone</th>
-                        <th>Planned Milestone</th>
-                        <th>Simulated State on {scrubberDate}</th>
-                        <th>Progress %</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {simulationData?.elements?.map((el) => {
-                        const styleInfo = stateColors[el.simulated_state] || stateColors.not_started;
-                        return (
-                          <tr key={el.id} style={{ background: el.is_active_on_date ? 'rgba(217, 119, 6, 0.08)' : 'transparent' }}>
-                            <td className="element-id-cell">{el.id}</td>
-                            <td><span className="type-tag">{el.element_type}</span></td>
-                            <td className="zone-cell">{el.spatial_zone}</td>
-                            <td className="schedule-cell">{el.planned_start} → {el.planned_end}</td>
-                            <td>
-                              <span className={`state-badge ${styleInfo.badge}`}>
-                                <span>{styleInfo.icon}</span>
-                                {styleInfo.label}
-                              </span>
-                            </td>
-                            <td>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <div style={{ width: '80px', height: '6px', background: '#334155', borderRadius: '3px', overflow: 'hidden' }}>
-                                  <div style={{ width: `${el.simulated_progress_percentage}%`, height: '100%', background: '#38bdf8' }} />
+                  <div className="desktop-table-view">
+                    <table className="elements-table">
+                      <thead>
+                        <tr>
+                          <th>Element ID</th>
+                          <th>Type</th>
+                          <th>Spatial Zone</th>
+                          <th>Planned Milestone</th>
+                          <th>Simulated State on {scrubberDate}</th>
+                          <th>Progress %</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {simulationData?.elements?.map((el) => {
+                          const styleInfo = stateColors[el.simulated_state] || stateColors.not_started;
+                          return (
+                            <tr key={el.id} style={{ background: el.is_active_on_date ? 'rgba(217, 119, 6, 0.08)' : 'transparent' }}>
+                              <td className="element-id-cell">{el.id}</td>
+                              <td><span className="type-tag">{el.element_type}</span></td>
+                              <td className="zone-cell">{el.spatial_zone}</td>
+                              <td className="schedule-cell">{el.planned_start} → {el.planned_end}</td>
+                              <td>
+                                <span className={`state-badge ${styleInfo.badge}`}>
+                                  <span>{styleInfo.icon}</span>
+                                  {styleInfo.label}
+                                </span>
+                              </td>
+                              <td>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  <div style={{ width: '80px', height: '6px', background: '#334155', borderRadius: '3px', overflow: 'hidden' }}>
+                                    <div style={{ width: `${el.simulated_progress_percentage}%`, height: '100%', background: '#38bdf8' }} />
+                                  </div>
+                                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{el.simulated_progress_percentage}%</span>
                                 </div>
-                                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{el.simulated_progress_percentage}%</span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="mobile-cards-view">
+                    {simulationData?.elements?.map((el) => {
+                      const styleInfo = stateColors[el.simulated_state] || stateColors.not_started;
+                      return (
+                        <div key={el.id} className="mobile-element-card" style={{ borderColor: el.is_active_on_date ? '#f59e0b' : 'var(--border-subtle)' }}>
+                          <div className="mobile-card-top">
+                            <span className="element-id-cell">{el.id}</span>
+                            <span className={`state-badge ${styleInfo.badge}`}>
+                              <span>{styleInfo.icon}</span>
+                              {styleInfo.label}
+                            </span>
+                          </div>
+                          <div className="mobile-card-body">
+                            <div className="mobile-card-tags">
+                              <span className="type-tag">{el.element_type}</span>
+                              <span className="zone-pill">{el.spatial_zone}</span>
+                            </div>
+                            <div className="mobile-card-schedule">
+                              <span>📅 Planned: {el.planned_start} → {el.planned_end}</span>
+                            </div>
+                            <div style={{ marginTop: '10px' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: '5px' }}>
+                                <span>Simulated 4D Progress:</span>
+                                <strong style={{ color: '#38bdf8' }}>{el.simulated_progress_percentage}%</strong>
                               </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                              <div style={{ width: '100%', height: '8px', background: '#1e293b', borderRadius: '4px', overflow: 'hidden' }}>
+                                <div style={{ width: `${el.simulated_progress_percentage}%`, height: '100%', background: 'linear-gradient(90deg, #0ea5e9, #10b981)' }} />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
             </div>
@@ -1141,34 +1227,58 @@ export default function App() {
                 </div>
               ) : (
                 <div className="elements-table-wrapper">
-                  <table className="elements-table">
-                    <thead>
-                      <tr>
-                        <th>Timestamp (UTC)</th>
-                        <th>Actor</th>
-                        <th>Action</th>
-                        <th>Entity ID</th>
-                        <th>Details / Rationale</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {auditLogs.map((log) => (
-                        <tr key={log.id}>
-                          <td style={{ whiteSpace: 'nowrap', color: 'var(--text-muted)' }}>
-                            {new Date(log.created_at).toLocaleString()}
-                          </td>
-                          <td style={{ fontWeight: 600, color: '#38bdf8' }}>{log.actor_id}</td>
-                          <td>
-                            <span className="type-tag">{log.action}</span>
-                          </td>
-                          <td className="element-id-cell">{log.entity_id}</td>
-                          <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                            {log.details_json}
-                          </td>
+                  <div className="desktop-table-view">
+                    <table className="elements-table">
+                      <thead>
+                        <tr>
+                          <th>Timestamp (UTC)</th>
+                          <th>Actor</th>
+                          <th>Action</th>
+                          <th>Entity ID</th>
+                          <th>Details / Rationale</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {auditLogs.map((log) => (
+                          <tr key={log.id}>
+                            <td style={{ whiteSpace: 'nowrap', color: 'var(--text-muted)' }}>
+                              {new Date(log.created_at).toLocaleString()}
+                            </td>
+                            <td style={{ fontWeight: 600, color: '#38bdf8' }}>{log.actor_id}</td>
+                            <td>
+                              <span className="type-tag">{log.action}</span>
+                            </td>
+                            <td className="element-id-cell">{log.entity_id}</td>
+                            <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                              {log.details_json}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="mobile-cards-view">
+                    {auditLogs.map((log) => (
+                      <div key={log.id} className="mobile-element-card">
+                        <div className="mobile-card-top">
+                          <span className="type-tag">{log.action}</span>
+                          <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                            {new Date(log.created_at).toLocaleDateString()} {new Date(log.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
+                        <div className="mobile-card-body">
+                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '6px' }}>
+                            <span className="element-id-cell">{log.entity_id}</span>
+                            <span style={{ fontSize: '0.78rem', color: '#38bdf8' }}>by {log.actor_id}</span>
+                          </div>
+                          <div className="mobile-audit-details">
+                            {log.details_json}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </section>
@@ -1292,7 +1402,7 @@ export default function App() {
                 <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px' }}>
                   + Upload New Site Inspection Photo
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
+                <div className="upload-evidence-grid">
                   <input
                     type="file"
                     ref={fileInputRef}
@@ -1310,7 +1420,7 @@ export default function App() {
                     required
                   />
                 </div>
-                <div style={{ display: 'flex', gap: '8px' }}>
+                <div className="upload-evidence-note-row">
                   <input
                     type="text"
                     placeholder="Inspection note or rebar verification detail..."
@@ -1320,8 +1430,7 @@ export default function App() {
                   />
                   <button
                     type="submit"
-                    className="action-btn"
-                    style={{ background: '#0284c7', color: 'white', whiteSpace: 'nowrap' }}
+                    className="upload-submit-btn"
                     disabled={uploadingEvidence}
                   >
                     {uploadingEvidence ? 'Uploading...' : 'Upload Evidence'}
@@ -1331,35 +1440,31 @@ export default function App() {
             </div>
 
             {/* Realtime 3D Model Synchronization Actions */}
-            <div style={{ marginTop: '20px', borderTop: '1px solid var(--border-subtle)', paddingTop: '16px' }}>
+            <div className="modal-sync-section">
               <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '8px' }}>
                 🚀 LIVE 3D BIM ACTION (Syncs to Unity Model in Real-Time):
               </div>
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <div className="modal-bim-actions">
                 <button
-                  className="action-btn"
-                  style={{ background: '#059669', color: 'white' }}
+                  className="modal-bim-btn btn-verify-complete"
                   onClick={() => handleUpdateObservation(inspectElement.id, 'accepted_complete', 'Inspected on-site; rebar and concrete curing verified complete.')}
                 >
                   ✓ Verify Complete
                 </button>
                 <button
-                  className="action-btn"
-                  style={{ background: '#d97706', color: 'white' }}
+                  className="modal-bim-btn btn-in-progress"
                   onClick={() => handleUpdateObservation(inspectElement.id, 'in_progress', 'Formwork currently erected; rebar placement in progress.')}
                 >
                   ⏳ In Progress
                 </button>
                 <button
-                  className="action-btn"
-                  style={{ background: '#7c3aed', color: 'white' }}
+                  className="modal-bim-btn btn-occluded"
                   onClick={() => handleUpdateObservation(inspectElement.id, 'occluded', 'Element occluded by scaffolding; requires manual review.')}
                 >
                   ⚠ Flag Occluded (Review)
                 </button>
                 <button
-                  className="action-btn"
-                  style={{ background: '#dc2626', color: 'white' }}
+                  className="modal-bim-btn btn-delayed"
                   onClick={() => handleUpdateObservation(inspectElement.id, 'missing', 'Element behind schedule; milestone date exceeded.')}
                 >
                   ✖ Flag Delayed
@@ -1367,8 +1472,8 @@ export default function App() {
               </div>
             </div>
 
-            <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'flex-end' }}>
-              <button className="action-btn" onClick={() => setInspectElement(null)}>
+            <div className="modal-footer-row">
+              <button className="action-btn modal-dismiss-btn" onClick={() => setInspectElement(null)}>
                 Close
               </button>
             </div>
