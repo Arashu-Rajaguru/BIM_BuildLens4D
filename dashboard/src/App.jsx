@@ -146,6 +146,11 @@ export default function App() {
   const [selectedBenchmark, setSelectedBenchmark] = useState(null);
 
   // Building Plan & Image Verification State (FR-026, FR-027, FR-030)
+  const [verificationMode, setVerificationMode] = useState('compare'); // 'compare' (Dual Upload) or 'single'
+  const [comparisonPlanFile, setComparisonPlanFile] = useState(null);
+  const [comparisonPlanPreviewUrl, setComparisonPlanPreviewUrl] = useState(null);
+  const [comparisonSiteFile, setComparisonSiteFile] = useState(null);
+  const [comparisonSitePreviewUrl, setComparisonSitePreviewUrl] = useState(null);
   const [verificationFile, setVerificationFile] = useState(null);
   const [verificationPreviewUrl, setVerificationPreviewUrl] = useState(null);
   const [verificationPlanType, setVerificationPlanType] = useState('site_photo');
@@ -155,6 +160,8 @@ export default function App() {
   const [verificationResult, setVerificationResult] = useState(null);
   const [verificationHistory, setVerificationHistory] = useState([]);
   const verificationInputRef = useRef(null);
+  const comparisonPlanInputRef = useRef(null);
+  const comparisonSiteInputRef = useRef(null);
 
   // PWA Mobile App Installation State
   const [deferredInstallPrompt, setDeferredInstallPrompt] = useState(null);
@@ -196,7 +203,25 @@ export default function App() {
   };
 
 
-  // File selection for Plan & Image Verification
+  // File selections for Dual & Single Plan Verification
+  const handleSelectComparisonPlan = (e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setComparisonPlanFile(file);
+      setComparisonPlanPreviewUrl(URL.createObjectURL(file));
+      setVerificationResult(null);
+    }
+  };
+
+  const handleSelectComparisonSite = (e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setComparisonSiteFile(file);
+      setComparisonSitePreviewUrl(URL.createObjectURL(file));
+      setVerificationResult(null);
+    }
+  };
+
   const handleSelectVerificationFile = (e) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -209,25 +234,48 @@ export default function App() {
   // Submit Plan/Image for 4D Verification
   const handleRunImageVerification = async (e) => {
     e?.preventDefault();
-    if (!verificationFile) {
-      alert("Please select a building photo or plan image to verify.");
-      return;
-    }
     setVerificationLoading(true);
     setErrorMsg(null);
 
     try {
-      const formData = new FormData();
-      formData.append('file', verificationFile);
-      formData.append('plan_type', verificationPlanType);
-      formData.append('target_zone', verificationZone);
-      formData.append('observer_id', verificationObserver);
-
       const projId = 'proj-terminal-04';
-      const res = await apiFetch(`/projects/${projId}/verify-image`, {
-        method: 'POST',
-        body: formData
-      }, apiBaseUrl, 30000);
+      let res;
+
+      if (verificationMode === 'compare') {
+        if (!comparisonPlanFile || !comparisonSiteFile) {
+          alert("Please upload BOTH: (1) The Construction Plan first, then (2) The Building Image to compare them.");
+          setVerificationLoading(false);
+          return;
+        }
+
+        const formData = new FormData();
+        formData.append('plan_file', comparisonPlanFile);
+        formData.append('image_file', comparisonSiteFile);
+        formData.append('target_zone', verificationZone);
+        formData.append('observer_id', verificationObserver);
+
+        res = await apiFetch(`/projects/${projId}/compare-plan-and-image`, {
+          method: 'POST',
+          body: formData
+        }, apiBaseUrl, 45000);
+      } else {
+        if (!verificationFile) {
+          alert("Please select a building photo or plan image to verify.");
+          setVerificationLoading(false);
+          return;
+        }
+
+        const formData = new FormData();
+        formData.append('file', verificationFile);
+        formData.append('plan_type', verificationPlanType);
+        formData.append('target_zone', verificationZone);
+        formData.append('observer_id', verificationObserver);
+
+        res = await apiFetch(`/projects/${projId}/verify-image`, {
+          method: 'POST',
+          body: formData
+        }, apiBaseUrl, 30000);
+      }
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
@@ -1035,84 +1083,209 @@ export default function App() {
                   )}
                 </div>
 
-                <form onSubmit={handleRunImageVerification} className="verification-form-grid">
-                  {/* File Upload Zone */}
-                  <div
-                    className={`file-dropzone ${verificationPreviewUrl ? 'has-file' : ''}`}
-                    onClick={() => verificationInputRef.current?.click()}
+                {/* Verification Mode Selector Tabs */}
+                <div style={{ display: 'flex', gap: '10px', margin: '16px 0', borderBottom: '1px solid var(--border-color)', paddingBottom: '14px', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    onClick={() => setVerificationMode('compare')}
+                    style={{
+                      padding: '10px 18px',
+                      borderRadius: '8px',
+                      border: verificationMode === 'compare' ? '2px solid #38bdf8' : '1px solid rgba(255,255,255,0.12)',
+                      background: verificationMode === 'compare' ? 'rgba(56, 189, 248, 0.15)' : 'rgba(255,255,255,0.03)',
+                      color: verificationMode === 'compare' ? '#38bdf8' : 'var(--text-muted)',
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      fontSize: '0.92rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px'
+                    }}
                   >
-                    <input
-                      type="file"
-                      ref={verificationInputRef}
-                      accept="image/*,.pdf"
-                      onChange={handleSelectVerificationFile}
-                      style={{ display: 'none' }}
-                    />
-                    {verificationPreviewUrl ? (
-                      <div className="preview-container">
-                        <img src={verificationPreviewUrl} alt="Selected Upload" className="preview-thumbnail" />
-                        <div className="change-file-overlay">
-                          <span>🔄 Click or Tap to Choose Different Image / Plan</span>
-                          <span style={{ fontSize: '0.75rem', opacity: 0.8 }}>({verificationFile?.name})</span>
+                    <span>⚖️ Dual Comparison: Plan vs. Building Image</span>
+                    <span style={{ fontSize: '0.7rem', background: '#0284c7', color: 'white', padding: '2px 6px', borderRadius: '4px' }}>Recommended</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setVerificationMode('single')}
+                    style={{
+                      padding: '10px 18px',
+                      borderRadius: '8px',
+                      border: verificationMode === 'single' ? '2px solid #38bdf8' : '1px solid rgba(255,255,255,0.12)',
+                      background: verificationMode === 'single' ? 'rgba(56, 189, 248, 0.15)' : 'rgba(255,255,255,0.03)',
+                      color: verificationMode === 'single' ? '#38bdf8' : 'var(--text-muted)',
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      fontSize: '0.92rem'
+                    }}
+                  >
+                    <span>📸 Single Plan / Photo Verification</span>
+                  </button>
+                </div>
+
+                <form onSubmit={handleRunImageVerification} className="verification-form-grid">
+                  {/* DUAL COMPARISON MODE: Upload Plan first, then upload Building Image */}
+                  {verificationMode === 'compare' ? (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', gridColumn: '1 / -1' }}>
+                      {/* Step 1: Upload Construction Plan */}
+                      <div
+                        className={`file-dropzone ${comparisonPlanPreviewUrl ? 'has-file' : ''}`}
+                        onClick={() => comparisonPlanInputRef.current?.click()}
+                        style={{ border: comparisonPlanPreviewUrl ? '2px solid #38bdf8' : '2px dashed rgba(56, 189, 248, 0.4)', background: 'rgba(56, 189, 248, 0.03)' }}
+                      >
+                        <input
+                          type="file"
+                          ref={comparisonPlanInputRef}
+                          accept="image/*,.pdf"
+                          onChange={handleSelectComparisonPlan}
+                          style={{ display: 'none' }}
+                        />
+                        {comparisonPlanPreviewUrl ? (
+                          <div className="preview-container">
+                            <img src={comparisonPlanPreviewUrl} alt="Construction Plan" className="preview-thumbnail" />
+                            <div className="change-file-overlay">
+                              <span>🔄 Change Construction Plan</span>
+                              <span style={{ fontSize: '0.75rem', opacity: 0.9 }}>({comparisonPlanFile?.name})</span>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="dropzone-content">
+                            <div style={{ fontSize: '1.8rem', marginBottom: '6px' }}>📐</div>
+                            <div className="dropzone-title" style={{ color: '#38bdf8', fontWeight: 800 }}>Step 1: Upload Construction Plan</div>
+                            <div className="dropzone-sub">Upload 2D CAD Blueprint, Floor Plan, or Structural Drawing</div>
+                            <div style={{ marginTop: '8px', fontSize: '0.75rem', background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', padding: '3px 8px', borderRadius: '4px', display: 'inline-block' }}>
+                              Required: 2D Plan
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Step 2: Upload Corresponding Building Image */}
+                      <div
+                        className={`file-dropzone ${comparisonSitePreviewUrl ? 'has-file' : ''}`}
+                        onClick={() => comparisonSiteInputRef.current?.click()}
+                        style={{ border: comparisonSitePreviewUrl ? '2px solid #10b981' : '2px dashed rgba(16, 185, 129, 0.4)', background: 'rgba(16, 185, 129, 0.03)' }}
+                      >
+                        <input
+                          type="file"
+                          ref={comparisonSiteInputRef}
+                          accept="image/*,.pdf"
+                          onChange={handleSelectComparisonSite}
+                          style={{ display: 'none' }}
+                        />
+                        {comparisonSitePreviewUrl ? (
+                          <div className="preview-container">
+                            <img src={comparisonSitePreviewUrl} alt="Building Site Photo" className="preview-thumbnail" />
+                            <div className="change-file-overlay">
+                              <span>🔄 Change Building Image</span>
+                              <span style={{ fontSize: '0.75rem', opacity: 0.9 }}>({comparisonSiteFile?.name})</span>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="dropzone-content">
+                            <div style={{ fontSize: '1.8rem', marginBottom: '6px' }}>📸</div>
+                            <div className="dropzone-title" style={{ color: '#10b981', fontWeight: 800 }}>Step 2: Upload Corresponding Building Image</div>
+                            <div className="dropzone-sub">Upload On-Site Physical Photo, Drone Survey, or Field Capture</div>
+                            <div style={{ marginTop: '8px', fontSize: '0.75rem', background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', padding: '3px 8px', borderRadius: '4px', display: 'inline-block' }}>
+                              Required: Physical Photo
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    /* SINGLE FILE MODE */
+                    <div
+                      className={`file-dropzone ${verificationPreviewUrl ? 'has-file' : ''}`}
+                      onClick={() => verificationInputRef.current?.click()}
+                    >
+                      <input
+                        type="file"
+                        ref={verificationInputRef}
+                        accept="image/*,.pdf"
+                        onChange={handleSelectVerificationFile}
+                        style={{ display: 'none' }}
+                      />
+                      {verificationPreviewUrl ? (
+                        <div className="preview-container">
+                          <img src={verificationPreviewUrl} alt="Selected Upload" className="preview-thumbnail" />
+                          <div className="change-file-overlay">
+                            <span>🔄 Click or Tap to Choose Different Image / Plan</span>
+                            <span style={{ fontSize: '0.75rem', opacity: 0.8 }}>({verificationFile?.name})</span>
+                          </div>
                         </div>
-                      </div>
-                    ) : (
-                      <div className="dropzone-content">
-                        <div className="dropzone-icon">📁</div>
-                        <div className="dropzone-title">Click or Tap to Upload Building Plan or Site Photo</div>
-                        <div className="dropzone-sub">Supports JPEG, PNG, WEBP, or Architectural Drawings (Camera on Phone Supported)</div>
-                      </div>
-                    )}
-                  </div>
+                      ) : (
+                        <div className="dropzone-content">
+                          <div className="dropzone-icon">📁</div>
+                          <div className="dropzone-title">Click or Tap to Upload Single Plan or Photo</div>
+                          <div className="dropzone-sub">Supports JPEG, PNG, WEBP, or Architectural Drawings</div>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {/* Configuration Controls */}
-                  <div className="verification-controls">
-                    <div className="form-group">
-                      <label className="form-label">Classification / Media Type:</label>
-                      <select
-                        className="form-select"
-                        value={verificationPlanType}
-                        onChange={(e) => setVerificationPlanType(e.target.value)}
-                      >
-                        <option value="site_photo">📸 On-Site Physical Building Photo</option>
-                        <option value="floor_plan">📐 2D Floor Plan / Blueprint</option>
-                        <option value="structural_drawing">🏗️ Structural Engineering Drawing</option>
-                        <option value="drone_capture">🚁 Aerial Drone Survey Capture</option>
-                      </select>
-                    </div>
+                  <div className="verification-controls" style={{ gridColumn: '1 / -1' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px', marginBottom: '14px' }}>
+                      {verificationMode === 'single' && (
+                        <div className="form-group">
+                          <label className="form-label">Classification / Media Type:</label>
+                          <select
+                            className="form-select"
+                            value={verificationPlanType}
+                            onChange={(e) => setVerificationPlanType(e.target.value)}
+                          >
+                            <option value="site_photo">📸 On-Site Physical Building Photo</option>
+                            <option value="floor_plan">📐 2D Floor Plan / Blueprint</option>
+                            <option value="structural_drawing">🏗️ Structural Engineering Drawing</option>
+                            <option value="drone_capture">🚁 Aerial Drone Survey Capture</option>
+                          </select>
+                        </div>
+                      )}
 
-                    <div className="form-group">
-                      <label className="form-label">Target Spatial Zone:</label>
-                      <select
-                        className="form-select"
-                        value={verificationZone}
-                        onChange={(e) => setVerificationZone(e.target.value)}
-                      >
-                        <option value="ALL">All Spatial Zones (Whole Structure)</option>
-                        <option value="Foundation">Foundation & Subsurface Footings</option>
-                        <option value="Ground">Ground Floor Grid Columns & Retaining Walls</option>
-                        <option value="Mezzanine">Level 1 Mezzanine Concourse & Beams</option>
-                      </select>
-                    </div>
+                      <div className="form-group">
+                        <label className="form-label">Target Spatial Zone:</label>
+                        <select
+                          className="form-select"
+                          value={verificationZone}
+                          onChange={(e) => setVerificationZone(e.target.value)}
+                        >
+                          <option value="ALL">All Spatial Zones (Whole Structure)</option>
+                          <option value="Foundation">Foundation & Subsurface Footings</option>
+                          <option value="Ground">Ground Floor Grid Columns & Retaining Walls</option>
+                          <option value="Mezzanine">Level 1 Mezzanine Concourse & Beams</option>
+                        </select>
+                      </div>
 
-                    <div className="form-group">
-                      <label className="form-label">Inspector / Surveyor ID:</label>
-                      <input
-                        type="text"
-                        className="form-input"
-                        value={verificationObserver}
-                        onChange={(e) => setVerificationObserver(e.target.value)}
-                        required
-                      />
+                      <div className="form-group">
+                        <label className="form-label">Inspector / Surveyor ID:</label>
+                        <input
+                          type="text"
+                          className="form-input"
+                          value={verificationObserver}
+                          onChange={(e) => setVerificationObserver(e.target.value)}
+                          required
+                        />
+                      </div>
                     </div>
 
                     <button
                       type="submit"
                       className="run-verify-btn"
-                      disabled={verificationLoading || !verificationFile}
+                      disabled={
+                        verificationLoading ||
+                        (verificationMode === 'compare' ? (!comparisonPlanFile || !comparisonSiteFile) : !verificationFile)
+                      }
+                      style={{
+                        background: verificationMode === 'compare' ? 'linear-gradient(135deg, #0284c7 0%, #059669 100%)' : 'var(--primary-gradient)',
+                        fontSize: '1rem',
+                        padding: '14px 24px'
+                      }}
                     >
                       {verificationLoading ? (
-                        <span>⏳ Analyzing Structural Geometry & Matching 4D Milestones...</span>
+                        <span>⏳ AI Cross-Comparing Construction Plan with Building Image & Checking 4D BIM...</span>
+                      ) : verificationMode === 'compare' ? (
+                        <span>⚡ Compare Building Image with Construction Plan & Generate Audit Report</span>
                       ) : (
                         <span>⚡ Verify Image Against 4D BIM & Generate Audit Report</span>
                       )}
@@ -1218,50 +1391,150 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Visual Detection Overlay Viewport */}
+                  {/* Visual Detection Overlay Viewport (Dual-View or Single) */}
                   <div className="visual-inspection-card">
                     <div className="inspection-card-header">
-                      <h3 className="panel-title">Visual Detection & Bounding Box Overlays</h3>
+                      <h3 className="panel-title">
+                        {verificationResult.plan_media_url || verificationResult.image_metadata?.is_dual_comparison
+                          ? "⚖️ Side-by-Side Visual Cross-Comparison: Construction Plan vs. As-Built Site Photo"
+                          : "Visual Detection & Bounding Box Overlays"}
+                      </h3>
                       <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
                         SHA-256: {verificationResult.file_hash.substring(0, 16)}... &bull; Resolution: {verificationResult.image_metadata?.width}x{verificationResult.image_metadata?.height}px
                       </span>
                     </div>
 
-                    <div className="interactive-overlay-viewport">
-                      <img
-                        src={verificationResult.media_url.startsWith('http') ? verificationResult.media_url : `${apiBaseUrl.replace('/api', '')}${verificationResult.media_url}`}
-                        alt="Analyzed Building"
-                        className="analyzed-base-img"
-                      />
-                      {verificationResult.elements.map((el) => {
-                        const [bx, by, bw, bh] = el.bounding_box;
-                        const statusColors = {
-                          verified_complete: '#059669',
-                          in_progress: '#d97706',
-                          potentially_delayed: '#dc2626',
-                          needs_manual_review: '#7c3aed',
-                          not_started: '#64748b'
-                        };
-                        const color = statusColors[el.visual_status] || '#38bdf8';
-                        return (
-                          <div
-                            key={el.element_id}
-                            className="detection-bbox"
-                            style={{
-                              left: `${bx * 100}%`,
-                              top: `${by * 100}%`,
-                              width: `${bw * 100}%`,
-                              height: `${bh * 100}%`,
-                              borderColor: color
-                            }}
-                          >
-                            <span className="bbox-label-tag" style={{ background: color }}>
-                              {el.element_id} [{(el.confidence_score * 100).toFixed(0)}%]
-                            </span>
+                    {verificationResult.plan_media_url || verificationResult.image_metadata?.is_dual_comparison ? (
+                      /* DUAL SIDE-BY-SIDE OVERLAY */
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '16px', padding: '16px' }}>
+                        {/* 1. Construction Plan Blueprint Viewport */}
+                        <div>
+                          <div style={{ fontWeight: 800, fontSize: '0.85rem', color: '#38bdf8', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span>📐 1. Uploaded Construction Plan (2D CAD Blueprint)</span>
                           </div>
-                        );
-                      })}
-                    </div>
+                          <div className="interactive-overlay-viewport" style={{ border: '2px solid rgba(56, 189, 248, 0.3)' }}>
+                            <img
+                              src={verificationResult.plan_media_url.startsWith('http') ? verificationResult.plan_media_url : `${apiBaseUrl.replace('/api', '')}${verificationResult.plan_media_url}`}
+                              alt="Construction Plan Blueprint"
+                              className="analyzed-base-img"
+                            />
+                            {verificationResult.elements.map((el) => {
+                              const [bx, by, bw, bh] = el.plan_bounding_box || [0.1, 0.2, 0.2, 0.2];
+                              const statusColors = {
+                                verified_complete: '#059669',
+                                in_progress: '#d97706',
+                                potentially_delayed: '#dc2626',
+                                needs_manual_review: '#7c3aed',
+                                not_started: '#64748b'
+                              };
+                              const color = statusColors[el.visual_status] || '#38bdf8';
+                              return (
+                                <div
+                                  key={`plan-${el.element_id}`}
+                                  className="detection-bbox"
+                                  style={{
+                                    left: `${bx * 100}%`,
+                                    top: `${by * 100}%`,
+                                    width: `${bw * 100}%`,
+                                    height: `${bh * 100}%`,
+                                    borderColor: color
+                                  }}
+                                >
+                                  <span className="bbox-label-tag" style={{ background: color }}>
+                                    {el.element_id} [Plan Grid]
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '6px' }}>
+                            Design Specifications: Grid alignments & partition layout verified.
+                          </div>
+                        </div>
+
+                        {/* 2. Corresponding As-Built Physical Photo Viewport */}
+                        <div>
+                          <div style={{ fontWeight: 800, fontSize: '0.85rem', color: '#10b981', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span>📸 2. Uploaded Physical Building Image (As-Built Photo)</span>
+                          </div>
+                          <div className="interactive-overlay-viewport" style={{ border: '2px solid rgba(16, 185, 129, 0.3)' }}>
+                            <img
+                              src={(verificationResult.image_media_url || verificationResult.media_url).startsWith('http') ? (verificationResult.image_media_url || verificationResult.media_url) : `${apiBaseUrl.replace('/api', '')}${(verificationResult.image_media_url || verificationResult.media_url)}`}
+                              alt="As-Built Building Evidence"
+                              className="analyzed-base-img"
+                            />
+                            {verificationResult.elements.map((el) => {
+                              const [bx, by, bw, bh] = el.bounding_box;
+                              const statusColors = {
+                                verified_complete: '#059669',
+                                in_progress: '#d97706',
+                                potentially_delayed: '#dc2626',
+                                needs_manual_review: '#7c3aed',
+                                not_started: '#64748b'
+                              };
+                              const color = statusColors[el.visual_status] || '#38bdf8';
+                              return (
+                                <div
+                                  key={`site-${el.element_id}`}
+                                  className="detection-bbox"
+                                  style={{
+                                    left: `${bx * 100}%`,
+                                    top: `${by * 100}%`,
+                                    width: `${bw * 100}%`,
+                                    height: `${bh * 100}%`,
+                                    borderColor: color
+                                  }}
+                                >
+                                  <span className="bbox-label-tag" style={{ background: color }}>
+                                    {el.element_id} [{(el.confidence_score * 100).toFixed(0)}%]
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '6px' }}>
+                            Physical Jobsite: Visual elements mapped to 4D schedule milestones.
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      /* SINGLE OVERLAY VIEWPORT */
+                      <div className="interactive-overlay-viewport">
+                        <img
+                          src={verificationResult.media_url.startsWith('http') ? verificationResult.media_url : `${apiBaseUrl.replace('/api', '')}${verificationResult.media_url}`}
+                          alt="Analyzed Building"
+                          className="analyzed-base-img"
+                        />
+                        {verificationResult.elements.map((el) => {
+                          const [bx, by, bw, bh] = el.bounding_box;
+                          const statusColors = {
+                            verified_complete: '#059669',
+                            in_progress: '#d97706',
+                            potentially_delayed: '#dc2626',
+                            needs_manual_review: '#7c3aed',
+                            not_started: '#64748b'
+                          };
+                          const color = statusColors[el.visual_status] || '#38bdf8';
+                          return (
+                            <div
+                              key={el.element_id}
+                              className="detection-bbox"
+                              style={{
+                                left: `${bx * 100}%`,
+                                top: `${by * 100}%`,
+                                width: `${bw * 100}%`,
+                                height: `${bh * 100}%`,
+                                borderColor: color
+                              }}
+                            >
+                              <span className="bbox-label-tag" style={{ background: color }}>
+                                {el.element_id} [{(el.confidence_score * 100).toFixed(0)}%]
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
 
                   {/* Discrepancy Breakdown Table & Cards */}

@@ -5,9 +5,63 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.models.domain import Project, VerificationReport
 from app.schemas.schemas import ImageVerificationResponse
-from app.services.image_verifier import verify_building_image_or_plan, generate_verification_report_html
+from app.services.image_verifier import (
+    verify_building_image_or_plan,
+    compare_plan_and_building_image,
+    generate_verification_report_html
+)
 
 router = APIRouter()
+
+@router.post(
+    "/projects/{project_id}/compare-plan-and-image",
+    response_model=ImageVerificationResponse,
+    status_code=status.HTTP_201_CREATED,
+    tags=["Image & Plan Verification"]
+)
+async def upload_and_compare_construction_plan_and_building_image(
+    project_id: str,
+    plan_file: UploadFile = File(...),
+    image_file: UploadFile = File(...),
+    target_zone: Optional[str] = Form("ALL"),
+    observer_id: str = Form("eng_field_01"),
+    db: Session = Depends(get_db)
+):
+    """
+    Dual-Upload Verification: Upload a 2D Construction Plan (CAD blueprint / architectural drawing),
+    followed by the corresponding physical As-Built Building Photo (site photo / drone capture).
+    Performs AI cross-comparison, detects completed vs in-progress vs missing components,
+    and generates an executive compliance verification report.
+    """
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Project '{project_id}' not found."
+        )
+
+    plan_bytes = await plan_file.read()
+    image_bytes = await image_file.read()
+
+    if len(plan_bytes) == 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded construction plan file is empty.")
+    if len(image_bytes) == 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded building image file is empty.")
+
+    result = compare_plan_and_building_image(
+        project_id=project_id,
+        plan_bytes=plan_bytes,
+        plan_filename=plan_file.filename or "construction_plan.jpg",
+        plan_content_type=plan_file.content_type or "image/jpeg",
+        image_bytes=image_bytes,
+        image_filename=image_file.filename or "building_capture.jpg",
+        image_content_type=image_file.content_type or "image/jpeg",
+        target_zone=target_zone,
+        observer_id=observer_id,
+        db=db
+    )
+    return result
+
 
 @router.post(
     "/projects/{project_id}/verify-image",
@@ -18,7 +72,8 @@ router = APIRouter()
 async def upload_and_verify_building_image_or_plan(
     project_id: str,
     file: UploadFile = File(...),
-    plan_type: str = Form("site_photo"), # 'site_photo', 'floor_plan', 'structural_drawing', 'drone_capture'
+    plan_file: Optional[UploadFile] = File(None),
+    plan_type: str = Form("site_photo"), # 'site_photo', 'floor_plan', 'structural_drawing', 'drone_capture', 'plan_vs_site_comparison'
     target_zone: Optional[str] = Form("ALL"),
     target_element_id: Optional[str] = Form(None),
     observer_id: str = Form("eng_field_01"),
@@ -28,6 +83,7 @@ async def upload_and_verify_building_image_or_plan(
     Upload a real-world building image, site photo, or 2D floor plan / CAD drawing,
     verify visible structural components against the 4D BIM digital twin,
     and generate an automated compliance verification report (SRS FR-026, FR-027, FR-030).
+    Supports optional dual plan comparison if plan_file is provided.
     """
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
@@ -42,6 +98,23 @@ async def upload_and_verify_building_image_or_plan(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Uploaded file is empty."
         )
+
+    # If plan_file is also provided, execute dual comparison
+    if plan_file is not None:
+        plan_bytes = await plan_file.read()
+        if len(plan_bytes) > 0:
+            return compare_plan_and_building_image(
+                project_id=project_id,
+                plan_bytes=plan_bytes,
+                plan_filename=plan_file.filename or "construction_plan.jpg",
+                plan_content_type=plan_file.content_type or "image/jpeg",
+                image_bytes=file_bytes,
+                image_filename=file.filename or "building_capture.jpg",
+                image_content_type=file.content_type or "image/jpeg",
+                target_zone=target_zone,
+                observer_id=observer_id,
+                db=db
+            )
 
     result = verify_building_image_or_plan(
         project_id=project_id,

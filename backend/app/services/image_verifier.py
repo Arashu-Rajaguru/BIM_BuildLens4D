@@ -298,6 +298,222 @@ def verify_building_image_or_plan(
     )
 
 
+def compare_plan_and_building_image(
+    project_id: str,
+    plan_bytes: bytes,
+    plan_filename: str,
+    plan_content_type: str,
+    image_bytes: bytes,
+    image_filename: str,
+    image_content_type: str,
+    target_zone: Optional[str] = "ALL",
+    observer_id: str = "eng_field_01",
+    db: Session = None
+) -> ImageVerificationResponse:
+    """
+    Dual-asset verification engine: Cross-compares an uploaded Construction Plan (2D CAD / Blueprint)
+    against a corresponding physical As-Built Building Photo (Site photo / Drone capture).
+    Performs AI alignment, checks planned vs physical elements, and generates an audit report.
+    """
+    now = datetime.datetime.now(datetime.timezone.utc)
+    evaluation_date = now.date()
+
+    # 1. Compute Cryptographic SHA-256 Hashes
+    plan_hash = hashlib.sha256(plan_bytes).hexdigest()
+    image_hash = hashlib.sha256(image_bytes).hexdigest()
+    combined_hash = hashlib.sha256((plan_hash + image_hash).encode()).hexdigest()
+
+    # 2. Save both files to static /uploads
+    suffix = uuid.uuid4().hex[:8]
+    safe_plan_name = f"{suffix}_plan_{plan_filename.replace(' ', '_')}"
+    safe_image_name = f"{suffix}_site_{image_filename.replace(' ', '_')}"
+    
+    plan_file_path = os.path.join(UPLOAD_DIR, safe_plan_name)
+    image_file_path = os.path.join(UPLOAD_DIR, safe_image_name)
+
+    with open(plan_file_path, "wb") as f:
+        f.write(plan_bytes)
+    with open(image_file_path, "wb") as f:
+        f.write(image_bytes)
+
+    plan_media_url = f"/uploads/{safe_plan_name}"
+    image_media_url = f"/uploads/{safe_image_name}"
+
+    # 3. Read image dimensions
+    plan_width, plan_height, plan_format = 1920, 1080, "JPEG"
+    image_width, image_height, image_format = 1920, 1080, "JPEG"
+
+    try:
+        with Image.open(plan_file_path) as p_img:
+            plan_width, plan_height = p_img.size
+            plan_format = p_img.format or "JPEG"
+    except Exception:
+        pass
+
+    try:
+        with Image.open(image_file_path) as s_img:
+            image_width, image_height = s_img.size
+            image_format = s_img.format or "JPEG"
+    except Exception:
+        pass
+
+    # 4. Fetch BIM Elements
+    query = db.query(BIMElement).filter(BIMElement.project_id == project_id)
+    if target_zone and target_zone != "ALL":
+        query = query.filter(BIMElement.spatial_zone.ilike(f"%{target_zone}%"))
+    elements = query.order_by(BIMElement.planned_start).all()
+    if not elements:
+        elements = db.query(BIMElement).filter(BIMElement.project_id == project_id).all()
+
+    # 5. Run AI Cross-Comparison Model
+    with Image.open(plan_file_path) as p_img, Image.open(image_file_path) as s_img:
+        ai_res = building_ai_model.compare_plan_and_site_image(p_img, s_img, elements)
+
+    detected_results: List[ImageVerificationElementResult] = []
+    for item, el in zip(ai_res["evaluations"], elements):
+        v_status = item["visual_status"]
+        if v_status in ("verified_complete", "in_progress", "potentially_delayed"):
+            el.verification_state = v_status
+        el.last_inspected_at = now
+
+        detected_results.append(
+            ImageVerificationElementResult(
+                element_id=item["element_id"],
+                element_type=item["element_type"],
+                label=item["label"],
+                spatial_zone=item["spatial_zone"],
+                planned_start=item["planned_start"],
+                planned_end=item["planned_end"],
+                visual_status=v_status,
+                confidence_score=round(item["confidence_score"], 2),
+                is_occluded=item["is_occluded"],
+                bounding_box=item["bounding_box"],
+                plan_bounding_box=item["plan_bounding_box"],
+                guardrail_status=item["guardrail_status"],
+                notes=item["notes"]
+            )
+        )
+
+    # 6. Combined Metadata
+    comparison_metadata = {
+        "is_dual_comparison": True,
+        "plan_media_url": plan_media_url,
+        "image_media_url": image_media_url,
+        "plan_filename": plan_filename,
+        "image_filename": image_filename,
+        "plan_hash": plan_hash,
+        "image_hash": image_hash,
+        "width": image_width,
+        "height": image_height,
+        "format": image_format,
+        "plan_width": plan_width,
+        "plan_height": plan_height,
+        "filesize_kb": round((len(plan_bytes) + len(image_bytes)) / 1024, 1),
+        "ai_model": {
+            "predicted_stage": ai_res["site_stage"],
+            "plan_stage": ai_res["plan_stage"],
+            "stage_confidence": ai_res["conformance_percentage"] / 100.0,
+            "stage_description": f"Cross-compared Construction Plan ({ai_res['plan_stage'].replace('_', ' ')}) against Physical Site Image ({ai_res['site_stage'].replace('_', ' ')}).",
+            "scaffolding_detected": ai_res["is_scaffolding_detected"],
+            "visual_metrics": {
+                "concrete_ratio": ai_res["site_features"].get("concrete_ratio", 0.3),
+                "earth_tone_ratio": ai_res["site_features"].get("earth_tone_ratio", 0.1),
+                "v_edge_density": ai_res["site_features"].get("v_edge_density", 0.07),
+                "conformance_percentage": ai_res["conformance_percentage"]
+            }
+        }
+    }
+
+    # 7. Persistence Records
+    verification_id = f"vrf-comp-{uuid.uuid4().hex[:8]}"
+    obs_id = f"obs-comp-{uuid.uuid4().hex[:8]}"
+    primary_element_id = detected_results[0].element_id if detected_results else "GENERAL"
+
+    obs = ProgressObservation(
+        id=obs_id,
+        project_id=project_id,
+        element_id=primary_element_id,
+        observer_id=observer_id,
+        reported_state="accepted_complete" if not ai_res["requires_human_review"] else "occluded",
+        confidence_score=round(ai_res["conformance_percentage"] / 100.0, 2),
+        camera_pose_json=json.dumps({"is_dual_comparison": True, "conformance": ai_res["conformance_percentage"]}),
+        notes=f"Dual Plan-to-Site Comparison: {ai_res['overall_verdict']}",
+        review_state="pending_review" if ai_res["requires_human_review"] else "verified",
+        captured_at=now
+    )
+    db.add(obs)
+    db.flush()
+
+    evi = EvidenceRecord(
+        id=f"evi-{uuid.uuid4().hex[:8]}",
+        observation_id=obs_id,
+        media_type="image/jpeg",
+        media_url=image_media_url,
+        file_hash=combined_hash,
+        metadata_json=json.dumps(comparison_metadata),
+        captured_at=now
+    )
+    db.add(evi)
+
+    results_payload = [r.model_dump() for r in detected_results]
+    report_record = VerificationReport(
+        id=verification_id,
+        project_id=project_id,
+        plan_type="plan_vs_site_comparison",
+        media_url=image_media_url,
+        file_hash=combined_hash,
+        metadata_json=json.dumps(comparison_metadata),
+        results_json=json.dumps(results_payload),
+        compliance_percentage=ai_res["conformance_percentage"],
+        overall_verdict=ai_res["overall_verdict"],
+        requires_human_review="true" if ai_res["requires_human_review"] else "false",
+        created_at=now
+    )
+    db.add(report_record)
+
+    audit = AuditLog(
+        id=f"aud-{uuid.uuid4().hex[:8]}",
+        project_id=project_id,
+        entity_type="verification_report",
+        entity_id=verification_id,
+        action="plan_and_image_compared",
+        actor_id=observer_id,
+        details_json=json.dumps({
+            "plan_file": plan_filename,
+            "site_image": image_filename,
+            "conformance": f"{ai_res['conformance_percentage']}%",
+            "verdict": ai_res["overall_verdict"]
+        }),
+        created_at=now
+    )
+    db.add(audit)
+    db.commit()
+
+    report_url = f"/api/projects/{project_id}/reports/verification/{verification_id}/html"
+
+    return ImageVerificationResponse(
+        verification_id=verification_id,
+        project_id=project_id,
+        plan_type="plan_vs_site_comparison",
+        media_url=image_media_url,
+        file_hash=combined_hash,
+        image_metadata=comparison_metadata,
+        total_detected_elements=ai_res["total_elements"],
+        verified_complete_count=ai_res["verified_complete_count"],
+        in_progress_count=ai_res["in_progress_count"],
+        delayed_count=ai_res["delayed_count"],
+        occluded_review_count=ai_res["occluded_review_count"],
+        compliance_percentage=ai_res["conformance_percentage"],
+        overall_verdict=ai_res["overall_verdict"],
+        requires_human_review=ai_res["requires_human_review"],
+        report_url=report_url,
+        elements=detected_results,
+        created_at=now,
+        plan_media_url=plan_media_url,
+        image_media_url=image_media_url
+    )
+
+
 def generate_verification_report_html(
     report: VerificationReport,
     project: Project
@@ -650,6 +866,33 @@ def generate_verification_report_html(
             </div>
         </div>
 
+        {"""
+        <div class="preview-section">
+            <h3 style="font-size: 14px; font-weight: 700; margin-bottom: 8px;">1. Side-by-Side Visual Cross-Comparison: Construction Plan vs. As-Built Site Photo</h3>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                <div>
+                    <div style="font-weight: 700; font-size: 11px; text-transform: uppercase; color: #0284c7; margin-bottom: 4px;">
+                        📐 Uploaded Construction Plan / CAD Drawing
+                    </div>
+                    <div class="preview-container">
+                        <img src=\"""" + meta.get("plan_media_url", "") + """\" alt="Construction Plan Blueprint" class="preview-img" />
+                        """ + "".join([f'<div class="bbox" style="left: {(r.get("plan_bounding_box", [0.1,0.2,0.2,0.2])[0])*100}%; top: {(r.get("plan_bounding_box", [0.1,0.2,0.2,0.2])[1])*100}%; width: {(r.get("plan_bounding_box", [0.1,0.2,0.2,0.2])[2])*100}%; height: {(r.get("plan_bounding_box", [0.1,0.2,0.2,0.2])[3])*100}%; border-color: {status_colors.get(r["visual_status"], "#0284c7")};"><span class="bbox-tag" style="background: {status_colors.get(r["visual_status"], "#0284c7")};">{r["element_id"]} (Plan)</span></div>' for r in results]) + """
+                    </div>
+                    <div style="font-size: 10px; color: #64748b; margin-top: 4px;">Blueprint: """ + str(meta.get("plan_filename", "plan.jpg")) + """ &bull; SHA-256: """ + str(meta.get("plan_hash", "")[:12]) + """...</div>
+                </div>
+                <div>
+                    <div style="font-weight: 700; font-size: 11px; text-transform: uppercase; color: #059669; margin-bottom: 4px;">
+                        📸 Uploaded Corresponding Physical Building Photo
+                    </div>
+                    <div class="preview-container">
+                        <img src=\"""" + meta.get("image_media_url", report.media_url) + """\" alt="As-Built Building Evidence" class="preview-img" />
+                        """ + bboxes_svg + """
+                    </div>
+                    <div style="font-size: 10px; color: #64748b; margin-top: 4px;">As-Built Photo: """ + str(meta.get("image_filename", "photo.jpg")) + """ &bull; SHA-256: """ + str(meta.get("image_hash", "")[:12]) + """...</div>
+                </div>
+            </div>
+        </div>
+        """ if meta.get("is_dual_comparison") else f"""
         <div class="preview-section">
             <h3 style="font-size: 14px; font-weight: 700; margin-bottom: 8px;">1. Visual Evidence & AI Detection Overlays</h3>
             <div class="preview-container">
@@ -661,6 +904,7 @@ def generate_verification_report_html(
                 <span>SHA-256: {report.file_hash}</span>
             </div>
         </div>
+        """}
 
         <div>
             <h3 style="font-size: 14px; font-weight: 700; margin-bottom: 8px;">2. Element Discrepancy & Schedule Audit Table</h3>

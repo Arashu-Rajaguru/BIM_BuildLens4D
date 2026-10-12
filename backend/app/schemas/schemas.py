@@ -221,9 +221,10 @@ class ImageVerificationElementResult(BaseModel):
     visual_status: str
     confidence_score: float
     is_occluded: bool
-    bounding_box: List[float] # [x, y, w, h] normalized 0..1
+    bounding_box: List[float] # [x, y, w, h] normalized 0..1 on building image
     guardrail_status: str
     notes: str
+    plan_bounding_box: Optional[List[float]] = None # [x, y, w, h] on construction plan
 
 class ImageVerificationResponse(BaseModel):
     verification_id: str
@@ -243,4 +244,6 @@ class ImageVerificationResponse(BaseModel):
     report_url: str
     elements: List[ImageVerificationElementResult]
     created_at: datetime.datetime
+    plan_media_url: Optional[str] = None
+    image_media_url: Optional[str] = None
 
