@@ -31,7 +31,7 @@ def simulate_4d_progress_at_date(
         except ValueError:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid date format. Expected YYYY-MM-DD.")
     else:
-        sim_date = datetime.date.today()
+        sim_date = datetime.date(2026, 10, 12)
 
     elements = db.query(BIMElement).filter(BIMElement.project_id == project_id).all()
     
@@ -39,6 +39,7 @@ def simulate_4d_progress_at_date(
     completed_count = 0
     in_progress_count = 0
     not_started_count = 0
+    total_progress_accum = 0.0
 
     for el in elements:
         start_d = el.planned_start
@@ -59,6 +60,8 @@ def simulate_4d_progress_at_date(
             progress_pct = 100.0
             completed_count += 1
 
+        total_progress_accum += progress_pct
+
         simulated_items.append({
             "id": el.id,
             "label": el.label,
@@ -72,7 +75,8 @@ def simulate_4d_progress_at_date(
         })
 
     total = len(elements)
-    overall_progress = round((completed_count / total * 100.0), 1) if total > 0 else 0.0
+    weighted_progress = round((total_progress_accum / total), 1) if total > 0 else 0.0
+    discrete_progress = round((completed_count / total * 100.0), 1) if total > 0 else 0.0
 
     return {
         "project_id": project_id,
@@ -81,6 +85,7 @@ def simulate_4d_progress_at_date(
         "completed_elements": completed_count,
         "in_progress_elements": in_progress_count,
         "not_started_elements": not_started_count,
-        "simulated_completion_percentage": overall_progress,
+        "simulated_completion_percentage": weighted_progress,
+        "discrete_completion_percentage": discrete_progress,
         "elements": simulated_items
     }

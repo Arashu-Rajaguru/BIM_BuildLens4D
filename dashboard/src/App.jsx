@@ -84,6 +84,129 @@ export const apiFetch = async (endpoint, options = {}, customBase = null, timeou
   }
 };
 
+export const PROJECT_BASELINE_DATE = '2026-10-12'; // Active construction execution baseline ("Today")
+export const PROJECT_START_DATE = '2026-08-15';    // Full project milestone inception
+export const PROJECT_FUTURE_COMPLETION = '2026-11-30'; // 100% handover milestone
+
+// Deterministic date range generator using UTC noon to prevent any timezone/DST shift
+export const generateTimelapseDates = (startStr, endStr) => {
+  const dates = [];
+  const [sy, sm, sd] = startStr.split('-').map(Number);
+  const [ey, em, ed] = endStr.split('-').map(Number);
+  const cur = new Date(Date.UTC(sy, sm - 1, sd, 12, 0, 0));
+  const end = new Date(Date.UTC(ey, em - 1, ed, 12, 0, 0));
+  while (cur <= end) {
+    const y = cur.getUTCFullYear();
+    const m = String(cur.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(cur.getUTCDate()).padStart(2, '0');
+    dates.push(`${y}-${m}-${d}`);
+    cur.setUTCDate(cur.getUTCDate() + 1);
+  }
+  return dates;
+};
+
+// Client-side instant 4D simulation engine with EVM progress calculations
+export const compute4DSimulationSnapshot = (targetDateStr, elementsList = MOCK_ELEMENTS) => {
+  const [ty, tm, td] = (targetDateStr || PROJECT_BASELINE_DATE).split('-').map(Number);
+  const targetTime = new Date(Date.UTC(ty, tm - 1, td, 12, 0, 0)).getTime();
+
+  let completedCount = 0;
+  let inProgressCount = 0;
+  let notStartedCount = 0;
+  let totalProgressAccum = 0.0;
+
+  const list = elementsList && elementsList.length > 0 ? elementsList : MOCK_ELEMENTS;
+
+  const simulatedItems = list.map((el) => {
+    const [sy, sm, sd] = el.planned_start.split('-').map(Number);
+    const [ey, em, ed] = el.planned_end.split('-').map(Number);
+    const startTime = new Date(Date.UTC(sy, sm - 1, sd, 12, 0, 0)).getTime();
+    const endTime = new Date(Date.UTC(ey, em - 1, ed, 12, 0, 0)).getTime();
+
+    let simState = 'not_started';
+    let progressPct = 0.0;
+    const isActive = targetTime >= startTime && targetTime <= endTime;
+
+    if (targetTime < startTime) {
+      simState = 'not_started';
+      progressPct = 0.0;
+      notStartedCount += 1;
+    } else if (targetTime <= endTime) {
+      simState = 'in_progress';
+      const totalDays = Math.max(1, Math.round((endTime - startTime) / 86400000));
+      const elapsedDays = Math.max(1, Math.round((targetTime - startTime) / 86400000));
+      progressPct = Math.min(99.0, Math.round((elapsedDays / totalDays) * 1000) / 10);
+      inProgressCount += 1;
+    } else {
+      simState = 'verified_complete';
+      progressPct = 100.0;
+      completedCount += 1;
+    }
+
+    totalProgressAccum += progressPct;
+
+    return {
+      id: el.id,
+      label: el.label,
+      element_type: el.element_type,
+      spatial_zone: el.spatial_zone || 'General',
+      planned_start: el.planned_start,
+      planned_end: el.planned_end,
+      simulated_state: simState,
+      simulated_progress_percentage: progressPct,
+      is_active_on_date: isActive
+    };
+  });
+
+  const total = list.length;
+  const weightedProgress = total > 0 ? Math.round((totalProgressAccum / total) * 10) / 10 : 0.0;
+  const discreteProgress = total > 0 ? Math.round((completedCount / total * 100.0) * 10) / 10 : 0.0;
+
+  return {
+    project_id: 'proj-terminal-04',
+    simulated_date: targetDateStr,
+    total_elements: total,
+    completed_elements: completedCount,
+    in_progress_elements: inProgressCount,
+    not_started_elements: notStartedCount,
+    simulated_completion_percentage: weightedProgress,
+    discrete_completion_percentage: discreteProgress,
+    elements: simulatedItems
+  };
+};
+
+export const getMilestoneInfo = (dateStr) => {
+  if (dateStr <= '2026-10-12') {
+    return {
+      phase: 'Phase 3: Subsurface Concrete Core & Track Columns Finished',
+      desc: 'Track level heavy columns Grid A1/A2/B1 & North Diaphragm Wall verified complete. Transfer beams currently undergoing falsework and post-tensioning placement.',
+      badgeColor: '#059669',
+      stageIndex: 3
+    };
+  } else if (dateStr <= '2026-10-22') {
+    return {
+      phase: 'Phase 4A: Mezzanine Level Long-Span Beam Integration',
+      desc: 'Transverse Header Beam BM-L1-02 and Longitudinal Transfer Beam BM-L1-01 reaching post-tensioning cure. Ticket Hall suspended slab decking ongoing.',
+      badgeColor: '#0284c7',
+      stageIndex: 4
+    };
+  } else if (dateStr <= '2026-11-05') {
+    return {
+      phase: 'Phase 4B: Suspended Slabs Cured & Sub-Foundation Pile Cap P1',
+      desc: 'Ticket Hall slab Bay 1 fully cast and cured. Deep Pile Cap Foundation Pier 1 rebar cage and slurry placement progressing to completion.',
+      badgeColor: '#8b5cf6',
+      stageIndex: 4
+    };
+  } else {
+    return {
+      phase: 'Phase 5: 100% Superstructure & Subsurface Platform Completion',
+      desc: 'All 8 primary BIM elements 100% completed, cured, and verified against IFC 4D models. Ready for final site handover and MEP integration.',
+      badgeColor: '#10b981',
+      stageIndex: 5
+    };
+  }
+};
+
 export default function App() {
   const [apiBaseUrl, setApiBaseUrl] = useState(getDefaultApiBase);
   const [serverLatency, setServerLatency] = useState(null);
@@ -123,11 +246,18 @@ export default function App() {
   const fileInputRef = useRef(null);
 
   // 4D Time Scrubber State (Simulate from Today forward to Future Completion)
-  const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
-  const futureCompletionStr = useMemo(() => '2026-11-30', []);
-  const [scrubberDate, setScrubberDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const todayStr = useMemo(() => PROJECT_BASELINE_DATE, []);
+  const futureCompletionStr = useMemo(() => PROJECT_FUTURE_COMPLETION, []);
+  const [scrubberRangeMode, setScrubberRangeMode] = useState('future'); // 'future' (Today -> Completion) or 'full' (Start -> Completion)
+  const scrubberStartDate = scrubberRangeMode === 'future' ? PROJECT_BASELINE_DATE : PROJECT_START_DATE;
+  const timelapseDates = useMemo(() => {
+    return generateTimelapseDates(scrubberStartDate, PROJECT_FUTURE_COMPLETION);
+  }, [scrubberStartDate]);
+
+  const [scrubberDate, setScrubberDate] = useState(PROJECT_BASELINE_DATE);
   const [isPlayingScrubber, setIsPlayingScrubber] = useState(false);
-  const [simulationData, setSimulationData] = useState(null);
+  const [playbackSpeed, setPlaybackSpeed] = useState(1); // 0.5, 1, 2
+  const [simulationData, setSimulationData] = useState(() => compute4DSimulationSnapshot(PROJECT_BASELINE_DATE, MOCK_ELEMENTS));
   const scrubberTimerRef = useRef(null);
 
   // Review Queue State
@@ -469,45 +599,89 @@ export default function App() {
     }
   };
 
-  // Fetch 4D Simulation Snapshot for Scrubber Date
-  const fetchSimulation = async (dateStr) => {
-    try {
-      const projId = 'proj-terminal-04';
-      const res = await apiFetch(`/projects/${projId}/simulation?target_date=${dateStr}`, {}, apiBaseUrl);
-      if (res.ok) {
-        setSimulationData(await res.json());
-      }
-    } catch (e) {
-      console.warn("Simulation fetch error:", e);
+  // 4D Time Scrubber Handlers and Engine
+  const currentDateIndex = useMemo(() => {
+    const idx = timelapseDates.indexOf(scrubberDate);
+    return idx >= 0 ? idx : 0;
+  }, [timelapseDates, scrubberDate]);
+
+  const handleSelectDate = (newDateStr) => {
+    setScrubberDate(newDateStr);
+    const snap = compute4DSimulationSnapshot(newDateStr, elements.length ? elements : MOCK_ELEMENTS);
+    setSimulationData(snap);
+    if (isApiOnline) {
+      fetchSimulation(newDateStr);
     }
   };
 
-  useEffect(() => {
-    fetchSimulation(scrubberDate);
-  }, [scrubberDate]);
+  const handleStepDay = (delta) => {
+    const curIdx = timelapseDates.indexOf(scrubberDate);
+    const validIdx = curIdx >= 0 ? curIdx : 0;
+    const targetIdx = Math.max(0, Math.min(timelapseDates.length - 1, validIdx + delta));
+    handleSelectDate(timelapseDates[targetIdx]);
+  };
+
+  const handleTogglePlay = () => {
+    if (!isPlayingScrubber) {
+      const curIdx = timelapseDates.indexOf(scrubberDate);
+      if (curIdx >= timelapseDates.length - 1) {
+        handleSelectDate(timelapseDates[0]);
+      }
+      setIsPlayingScrubber(true);
+    } else {
+      setIsPlayingScrubber(false);
+    }
+  };
+
+  // Fetch 4D Simulation Snapshot for Scrubber Date with race-condition guard
+  const fetchSimulation = async (dateStr) => {
+    try {
+      const projId = 'proj-terminal-04';
+      const res = await apiFetch(`/projects/${projId}/simulation?target_date=${dateStr}`, {}, apiBaseUrl, 4000);
+      if (res.ok) {
+        const data = await res.json();
+        setScrubberDate((active) => {
+          if (data && data.simulated_date === active) {
+            setSimulationData(data);
+          }
+          return active;
+        });
+      }
+    } catch (e) {
+      // Local snapshot is already active and reliable
+    }
+  };
 
   // Scrubber Auto-Playback Loop (Simulate from Today to Future Completion)
   useEffect(() => {
     if (isPlayingScrubber) {
+      const intervalMs = playbackSpeed === 0.5 ? 700 : playbackSpeed === 2 ? 180 : 380;
       scrubberTimerRef.current = setInterval(() => {
-        setScrubberDate((prev) => {
-          const d = new Date(prev);
-          d.setDate(d.getDate() + 1);
-          const nextStr = d.toISOString().split('T')[0];
-          if (nextStr > futureCompletionStr) {
+        setScrubberDate((prevDate) => {
+          const curIdx = timelapseDates.indexOf(prevDate);
+          const nextIdx = (curIdx >= 0 ? curIdx : 0) + 1;
+          if (nextIdx >= timelapseDates.length) {
             setIsPlayingScrubber(false);
-            return todayStr; // Loop back to today
+            return timelapseDates[timelapseDates.length - 1];
           }
-          return nextStr;
+          const nextDate = timelapseDates[nextIdx];
+          const snap = compute4DSimulationSnapshot(nextDate, elements.length ? elements : MOCK_ELEMENTS);
+          setSimulationData(snap);
+          return nextDate;
         });
-      }, 450);
+      }, intervalMs);
     } else {
       if (scrubberTimerRef.current) clearInterval(scrubberTimerRef.current);
     }
     return () => {
       if (scrubberTimerRef.current) clearInterval(scrubberTimerRef.current);
     };
-  }, [isPlayingScrubber, todayStr, futureCompletionStr]);
+  }, [isPlayingScrubber, timelapseDates, playbackSpeed, elements]);
+
+  // Keep simulationData in sync if elements change
+  useEffect(() => {
+    setSimulationData(compute4DSimulationSnapshot(scrubberDate, elements.length ? elements : MOCK_ELEMENTS));
+  }, [elements]);
 
   // Fetch Evidence for Modal
   const loadElementEvidences = async (elemId) => {
@@ -1676,199 +1850,387 @@ export default function App() {
           )}
 
           {/* TAB 2: 4D TIME-LAPSE SCHEDULE SCRUBBER */}
-          {activeTab === 'scrubber' && (
-            <div className="scrubber-layout">
-              <div className="scrubber-control-card">
-                <div className="scrubber-header-flex">
-                  <div>
-                    <h2 className="section-title">4D Time-Lapse Schedule Scrubber</h2>
-                    <p className="section-sub">
-                      Simulate 4D construction milestone evolution across past, present, and scheduled dates.
-                    </p>
-                  </div>
-                  <div className="scrubber-actions">
-                    <button
-                      className={`play-scrub-btn ${isPlayingScrubber ? 'btn-pause' : 'btn-play'}`}
-                      onClick={() => setIsPlayingScrubber(!isPlayingScrubber)}
-                    >
-                      {isPlayingScrubber ? '⏸ Pause Simulation' : '▶ Play 4D Simulation'}
-                    </button>
-                  </div>
-                </div>
+          {activeTab === 'scrubber' && (() => {
+            const milestone = getMilestoneInfo(scrubberDate);
+            const totalTimelapseDays = Math.max(1, timelapseDates.length - 1);
+            const timelinePercent = Math.min(100, Math.max(0, Math.round((currentDateIndex / totalTimelapseDays) * 100)));
+            const isToday = scrubberDate === PROJECT_BASELINE_DATE;
+            const isFutureComplete = scrubberDate >= PROJECT_FUTURE_COMPLETION;
+            const daysOffsetFromToday = Math.round((new Date(Date.UTC(...scrubberDate.split('-').map(Number).map((v, i) => i === 1 ? v - 1 : v), 12, 0, 0)).getTime() - new Date(Date.UTC(2026, 9, 12, 12, 0, 0)).getTime()) / 86400000);
 
-                <div className="scrubber-slider-wrapper">
-                  <div className="scrubber-slider-header">
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <span>Simulated Date: <strong style={{ color: '#38bdf8', fontSize: '1.25rem' }}>{scrubberDate}</strong></span>
-                      {scrubberDate === todayStr && (
-                        <span style={{ background: '#059669', color: '#fff', fontSize: '0.72rem', padding: '3px 9px', borderRadius: '12px', fontWeight: 800 }}>
-                          TODAY
-                        </span>
-                      )}
-                      {scrubberDate >= futureCompletionStr && (
-                        <span style={{ background: '#3b82f6', color: '#fff', fontSize: '0.72rem', padding: '3px 9px', borderRadius: '12px', fontWeight: 800 }}>
-                          FUTURE COMPLETION
-                        </span>
-                      )}
+            return (
+              <div className="scrubber-layout">
+                <div className="scrubber-control-card">
+                  <div className="scrubber-header-flex">
+                    <div>
+                      <h2 className="section-title">4D Time-Lapse Schedule Scrubber</h2>
+                      <p className="section-sub">
+                        Simulate construction milestone evolution from Today ({PROJECT_BASELINE_DATE}) forward to 100% Future Completion ({PROJECT_FUTURE_COMPLETION}).
+                      </p>
                     </div>
-                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <div className="scrub-toolbar">
+                      {/* Timeline Range Toggle */}
+                      <div className="scrub-range-toggle">
+                        <button
+                          type="button"
+                          className={`range-toggle-btn ${scrubberRangeMode === 'future' ? 'active' : ''}`}
+                          onClick={() => {
+                            setScrubberRangeMode('future');
+                            handleSelectDate(PROJECT_BASELINE_DATE);
+                          }}
+                        >
+                          📅 Today → Completion
+                        </button>
+                        <button
+                          type="button"
+                          className={`range-toggle-btn ${scrubberRangeMode === 'full' ? 'active' : ''}`}
+                          onClick={() => {
+                            setScrubberRangeMode('full');
+                            handleSelectDate(PROJECT_START_DATE);
+                          }}
+                        >
+                          🏗️ Full Lifecycle
+                        </button>
+                      </div>
+
+                      {/* Stepper Buttons */}
                       <button
                         type="button"
-                        onClick={() => setScrubberDate(todayStr)}
-                        style={{ background: 'rgba(56, 189, 248, 0.15)', border: '1px solid rgba(56, 189, 248, 0.4)', color: '#38bdf8', borderRadius: '6px', padding: '4px 10px', fontSize: '0.8rem', cursor: 'pointer', fontWeight: 700 }}
+                        className="scrub-step-btn"
+                        onClick={() => handleStepDay(-1)}
+                        title="Step 1 day backward"
                       >
-                        📍 Today
+                        ⏮ -1 Day
                       </button>
                       <button
                         type="button"
-                        onClick={() => setScrubberDate(futureCompletionStr)}
-                        style={{ background: 'rgba(16, 185, 129, 0.15)', border: '1px solid rgba(16, 185, 129, 0.4)', color: '#34d399', borderRadius: '6px', padding: '4px 10px', fontSize: '0.8rem', cursor: 'pointer', fontWeight: 700 }}
+                        className="scrub-step-btn"
+                        onClick={() => handleStepDay(1)}
+                        title="Step 1 day forward"
                       >
-                        🏁 Future Completion
+                        +1 Day ⏭
                       </button>
-                      <input
-                        type="date"
-                        min={todayStr}
-                        max={futureCompletionStr}
-                        value={scrubberDate}
-                        onChange={(e) => setScrubberDate(e.target.value)}
-                        className="form-input"
-                        style={{ width: 'auto', padding: '4px 10px' }}
-                      />
-                    </div>
-                  </div>
-                  <input
-                    type="range"
-                    min={new Date(todayStr).getTime()}
-                    max={new Date(futureCompletionStr).getTime()}
-                    step="86400000"     // 1 day
-                    value={Math.max(new Date(todayStr).getTime(), Math.min(new Date(futureCompletionStr).getTime(), new Date(scrubberDate).getTime()))}
-                    onChange={(e) => setScrubberDate(new Date(parseInt(e.target.value)).toISOString().split('T')[0])}
-                    className="range-slider"
-                  />
-                  <div className="slider-labels">
-                    <span><strong>Today ({todayStr})</strong>: Current Site State</span>
-                    <span><strong>Nov 05, 2026</strong>: Superstructure Slabs</span>
-                    <span><strong>Nov 30, 2026</strong>: 100% Future Completion</span>
-                  </div>
-                </div>
 
-                {simulationData && (
-                  <div className="simulation-kpi-row">
-                    <div className="kpi-mini">
-                      <div className="kpi-label">Projected Progress</div>
-                      <div className="kpi-number" style={{ color: '#38bdf8' }}>
-                        {simulationData.simulated_completion_percentage}%
+                      {/* Speed selector */}
+                      <div className="speed-selector">
+                        <span className="speed-label">Speed:</span>
+                        <button
+                          type="button"
+                          className={`speed-btn ${playbackSpeed === 0.5 ? 'active' : ''}`}
+                          onClick={() => setPlaybackSpeed(0.5)}
+                        >
+                          0.5x
+                        </button>
+                        <button
+                          type="button"
+                          className={`speed-btn ${playbackSpeed === 1 ? 'active' : ''}`}
+                          onClick={() => setPlaybackSpeed(1)}
+                        >
+                          1x
+                        </button>
+                        <button
+                          type="button"
+                          className={`speed-btn ${playbackSpeed === 2 ? 'active' : ''}`}
+                          onClick={() => setPlaybackSpeed(2)}
+                        >
+                          2x
+                        </button>
                       </div>
-                    </div>
-                    <div className="kpi-mini">
-                      <div className="kpi-label">Completed on Date</div>
-                      <div className="kpi-number" style={{ color: '#059669' }}>
-                        {simulationData.completed_elements} / {simulationData.total_elements}
-                      </div>
-                    </div>
-                    <div className="kpi-mini">
-                      <div className="kpi-label">Active Construction</div>
-                      <div className="kpi-number" style={{ color: '#d97706' }}>
-                        {simulationData.in_progress_elements}
-                      </div>
-                    </div>
-                    <div className="kpi-mini">
-                      <div className="kpi-label">Pending Start</div>
-                      <div className="kpi-number" style={{ color: '#64748b' }}>
-                        {simulationData.not_started_elements}
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
 
-              {/* Simulated Elements Grid */}
-              <div className="explorer-card" style={{ marginTop: '20px' }}>
-                <h3 className="panel-title" style={{ padding: '20px 24px 0' }}>
-                  Simulated 4D Element States as of {scrubberDate}
-                </h3>
-                <div className="elements-table-wrapper">
-                  <div className="desktop-table-view">
-                    <table className="elements-table">
-                      <thead>
-                        <tr>
-                          <th>Element ID</th>
-                          <th>Type</th>
-                          <th>Spatial Zone</th>
-                          <th>Planned Milestone</th>
-                          <th>Simulated State on {scrubberDate}</th>
-                          <th>Progress %</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {simulationData?.elements?.map((el) => {
-                          const styleInfo = stateColors[el.simulated_state] || stateColors.not_started;
-                          return (
-                            <tr key={el.id} style={{ background: el.is_active_on_date ? 'rgba(217, 119, 6, 0.08)' : 'transparent' }}>
-                              <td className="element-id-cell">{el.id}</td>
-                              <td><span className="type-tag">{el.element_type}</span></td>
-                              <td className="zone-cell">{el.spatial_zone}</td>
-                              <td className="schedule-cell">{el.planned_start} → {el.planned_end}</td>
-                              <td>
-                                <span className={`state-badge ${styleInfo.badge}`}>
-                                  <span>{styleInfo.icon}</span>
-                                  {styleInfo.label}
-                                </span>
-                              </td>
-                              <td>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                  <div style={{ width: '80px', height: '6px', background: '#334155', borderRadius: '3px', overflow: 'hidden' }}>
-                                    <div style={{ width: `${el.simulated_progress_percentage}%`, height: '100%', background: '#38bdf8' }} />
-                                  </div>
-                                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{el.simulated_progress_percentage}%</span>
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
+                      {/* Play/Pause Button */}
+                      <button
+                        type="button"
+                        className={`play-scrub-btn ${isPlayingScrubber ? 'btn-pause' : 'btn-play'}`}
+                        onClick={handleTogglePlay}
+                      >
+                        {isPlayingScrubber ? '⏸ Pause Simulation' : '▶ Play 4D Simulation'}
+                      </button>
+                    </div>
                   </div>
 
-                  <div className="mobile-cards-view">
-                    {simulationData?.elements?.map((el) => {
-                      const styleInfo = stateColors[el.simulated_state] || stateColors.not_started;
-                      return (
-                        <div key={el.id} className="mobile-element-card" style={{ borderColor: el.is_active_on_date ? '#f59e0b' : 'var(--border-subtle)' }}>
-                          <div className="mobile-card-top">
-                            <span className="element-id-cell">{el.id}</span>
-                            <span className={`state-badge ${styleInfo.badge}`}>
-                              <span>{styleInfo.icon}</span>
-                              {styleInfo.label}
-                            </span>
-                          </div>
-                          <div className="mobile-card-body">
-                            <div className="mobile-card-tags">
-                              <span className="type-tag">{el.element_type}</span>
-                              <span className="zone-pill">{el.spatial_zone}</span>
-                            </div>
-                            <div className="mobile-card-schedule">
-                              <span>📅 Planned: {el.planned_start} → {el.planned_end}</span>
-                            </div>
-                            <div style={{ marginTop: '10px' }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: '5px' }}>
-                                <span>Simulated 4D Progress:</span>
-                                <strong style={{ color: '#38bdf8' }}>{el.simulated_progress_percentage}%</strong>
-                              </div>
-                              <div style={{ width: '100%', height: '8px', background: '#1e293b', borderRadius: '4px', overflow: 'hidden' }}>
-                                <div style={{ width: `${el.simulated_progress_percentage}%`, height: '100%', background: 'linear-gradient(90deg, #0ea5e9, #10b981)' }} />
-                              </div>
-                            </div>
-                          </div>
+                  {/* Scrubber Slider Wrapper */}
+                  <div className="scrubber-slider-wrapper">
+                    <div className="scrubber-slider-header">
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                        <span>Simulated Date: <strong style={{ color: '#38bdf8', fontSize: '1.3rem', fontFamily: 'var(--font-mono)' }}>{scrubberDate}</strong></span>
+                        {isToday && (
+                          <span style={{ background: '#059669', color: '#fff', fontSize: '0.74rem', padding: '3px 10px', borderRadius: '12px', fontWeight: 800 }}>
+                            ● TODAY (BASELINE)
+                          </span>
+                        )}
+                        {isFutureComplete && (
+                          <span style={{ background: '#3b82f6', color: '#fff', fontSize: '0.74rem', padding: '3px 10px', borderRadius: '12px', fontWeight: 800 }}>
+                            🏁 100% FUTURE HANDOVER
+                          </span>
+                        )}
+                        {!isToday && !isFutureComplete && daysOffsetFromToday > 0 && (
+                          <span style={{ background: 'rgba(56, 189, 248, 0.18)', color: '#38bdf8', fontSize: '0.74rem', padding: '3px 10px', borderRadius: '12px', fontWeight: 700, border: '1px solid rgba(56, 189, 248, 0.4)' }}>
+                            +{daysOffsetFromToday} Days from Today
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                        <button
+                          type="button"
+                          onClick={() => handleSelectDate(PROJECT_BASELINE_DATE)}
+                          style={{ background: 'rgba(56, 189, 248, 0.15)', border: '1px solid rgba(56, 189, 248, 0.4)', color: '#38bdf8', borderRadius: '6px', padding: '5px 12px', fontSize: '0.8rem', cursor: 'pointer', fontWeight: 700 }}
+                        >
+                          📍 Today (Oct 12)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleSelectDate('2026-11-05')}
+                          style={{ background: 'rgba(139, 92, 246, 0.15)', border: '1px solid rgba(139, 92, 246, 0.4)', color: '#a78bfa', borderRadius: '6px', padding: '5px 12px', fontSize: '0.8rem', cursor: 'pointer', fontWeight: 700 }}
+                        >
+                          🏗️ Nov 05 (Slabs)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleSelectDate(PROJECT_FUTURE_COMPLETION)}
+                          style={{ background: 'rgba(16, 185, 129, 0.15)', border: '1px solid rgba(16, 185, 129, 0.4)', color: '#34d399', borderRadius: '6px', padding: '5px 12px', fontSize: '0.8rem', cursor: 'pointer', fontWeight: 700 }}
+                        >
+                          🏁 Completion (Nov 30)
+                        </button>
+                        <input
+                          type="date"
+                          min={timelapseDates[0]}
+                          max={timelapseDates[timelapseDates.length - 1]}
+                          value={scrubberDate}
+                          onChange={(e) => handleSelectDate(e.target.value)}
+                          className="form-input"
+                          style={{ width: 'auto', padding: '4px 10px' }}
+                        />
+                      </div>
+                    </div>
+
+                    <input
+                      type="range"
+                      min="0"
+                      max={timelapseDates.length - 1}
+                      step="1"
+                      value={currentDateIndex}
+                      onChange={(e) => {
+                        const idx = parseInt(e.target.value, 10);
+                        if (idx >= 0 && idx < timelapseDates.length) {
+                          handleSelectDate(timelapseDates[idx]);
+                        }
+                      }}
+                      className="range-slider"
+                    />
+
+                    <div className="slider-labels">
+                      <span><strong>Oct 12 (Today)</strong>: Substructure Handover (50% discrete / 77.4% EVM)</span>
+                      <span><strong>Nov 05</strong>: Superstructure Slabs & Pile Cap P1</span>
+                      <span><strong>Nov 30</strong>: 100% Future Handover Completion</span>
+                    </div>
+
+                    {/* Milestone Stage Banner */}
+                    <div className="milestone-stage-banner" style={{ borderLeftColor: milestone.badgeColor }}>
+                      <div className="milestone-badge-pill" style={{ background: milestone.badgeColor }}>
+                        {milestone.phase}
+                      </div>
+                      <p className="milestone-desc-text">{milestone.desc}</p>
+                      <div className="milestone-timeline-meter">
+                        <div className="meter-label">
+                          <span>Timeline Execution: Day {currentDateIndex} of {totalTimelapseDays}</span>
+                          <strong>{timelinePercent}% Timeline Elapsed</strong>
                         </div>
-                      );
-                    })}
+                        <div className="meter-track">
+                          <div
+                            className="meter-fill"
+                            style={{ width: `${timelinePercent}%`, background: milestone.badgeColor }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* KPI Row */}
+                  {simulationData && (
+                    <div className="simulation-kpi-row">
+                      <div className="kpi-mini">
+                        <div className="kpi-label">Projected 4D Progress</div>
+                        <div className="kpi-number" style={{ color: '#38bdf8' }}>
+                          {simulationData.simulated_completion_percentage}%
+                        </div>
+                      </div>
+                      <div className="kpi-mini">
+                        <div className="kpi-label">Completed Elements</div>
+                        <div className="kpi-number" style={{ color: '#059669' }}>
+                          {simulationData.completed_elements} / {simulationData.total_elements}
+                        </div>
+                      </div>
+                      <div className="kpi-mini">
+                        <div className="kpi-label">Active Construction</div>
+                        <div className="kpi-number" style={{ color: '#d97706' }}>
+                          {simulationData.in_progress_elements}
+                        </div>
+                      </div>
+                      <div className="kpi-mini">
+                        <div className="kpi-label">Pending Start</div>
+                        <div className="kpi-number" style={{ color: '#64748b' }}>
+                          {simulationData.not_started_elements}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* 4D BIM Structural Matrix Grid */}
+                <div className="explorer-card bim-matrix-section">
+                  <div style={{ padding: '20px 24px 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+                    <div>
+                      <h3 className="panel-title" style={{ margin: 0 }}>4D BIM Structural Element Matrix</h3>
+                      <p className="section-sub" style={{ margin: '4px 0 0' }}>Real-time 3D element milestone states simulated on {scrubberDate}.</p>
+                    </div>
+                    <div style={{ display: 'flex', gap: '12px', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                      <span>🟢 Complete ({simulationData?.completed_elements || 0})</span>
+                      <span>🟡 Active ({simulationData?.in_progress_elements || 0})</span>
+                      <span>⚪ Pending ({simulationData?.not_started_elements || 0})</span>
+                    </div>
+                  </div>
+                  <div style={{ padding: '0 24px 20px' }}>
+                    <div className="bim-matrix-grid">
+                      {simulationData?.elements?.map((el) => {
+                        const styleInfo = stateColors[el.simulated_state] || stateColors.not_started;
+                        const isComplete = el.simulated_state === 'verified_complete';
+                        const isActive = el.is_active_on_date;
+                        return (
+                          <div
+                            key={el.id}
+                            className={`bim-matrix-card ${isActive ? 'active-construction' : isComplete ? 'completed-construction' : ''}`}
+                          >
+                            <div className="bim-matrix-header">
+                              <span className="bim-matrix-id">{el.id}</span>
+                              <span className={`state-badge ${styleInfo.badge}`}>
+                                <span>{styleInfo.icon}</span>
+                                {styleInfo.label}
+                              </span>
+                            </div>
+                            <div className="bim-matrix-label">{el.label}</div>
+                            <div className="bim-matrix-meta">
+                              <span className="type-tag">{el.element_type}</span>
+                              <span>{el.spatial_zone}</span>
+                            </div>
+                            <div style={{ marginTop: 'auto', paddingTop: '8px' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: 'var(--text-secondary)', marginBottom: '3px' }}>
+                                <span>Planned: {el.planned_start} → {el.planned_end}</span>
+                                <strong style={{ color: isComplete ? '#10b981' : isActive ? '#f59e0b' : '#64748b' }}>
+                                  {el.simulated_progress_percentage}%
+                                </strong>
+                              </div>
+                              <div className="bim-matrix-progress-bar">
+                                <div
+                                  style={{
+                                    width: `${el.simulated_progress_percentage}%`,
+                                    height: '100%',
+                                    background: isComplete
+                                      ? '#10b981'
+                                      : isActive
+                                      ? 'linear-gradient(90deg, #f59e0b, #10b981)'
+                                      : '#334155',
+                                    transition: 'width 0.2s ease'
+                                  }}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Simulated Elements Grid Table */}
+                <div className="explorer-card" style={{ marginTop: '20px' }}>
+                  <h3 className="panel-title" style={{ padding: '20px 24px 0' }}>
+                    Detailed Element Schedule Roster as of {scrubberDate}
+                  </h3>
+                  <div className="elements-table-wrapper">
+                    <div className="desktop-table-view">
+                      <table className="elements-table">
+                        <thead>
+                          <tr>
+                            <th>Element ID</th>
+                            <th>Type</th>
+                            <th>Design Label</th>
+                            <th>Spatial Zone</th>
+                            <th>Planned Milestone</th>
+                            <th>Simulated State on {scrubberDate}</th>
+                            <th>Progress %</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {simulationData?.elements?.map((el) => {
+                            const styleInfo = stateColors[el.simulated_state] || stateColors.not_started;
+                            return (
+                              <tr key={el.id} style={{ background: el.is_active_on_date ? 'rgba(217, 119, 6, 0.08)' : 'transparent' }}>
+                                <td className="element-id-cell">{el.id}</td>
+                                <td><span className="type-tag">{el.element_type}</span></td>
+                                <td className="label-cell">{el.label}</td>
+                                <td className="zone-cell">{el.spatial_zone}</td>
+                                <td className="schedule-cell">{el.planned_start} → {el.planned_end}</td>
+                                <td>
+                                  <span className={`state-badge ${styleInfo.badge}`}>
+                                    <span>{styleInfo.icon}</span>
+                                    {styleInfo.label}
+                                  </span>
+                                </td>
+                                <td>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <div style={{ width: '80px', height: '6px', background: '#334155', borderRadius: '3px', overflow: 'hidden' }}>
+                                      <div style={{ width: `${el.simulated_progress_percentage}%`, height: '100%', background: '#38bdf8', transition: 'width 0.2s ease' }} />
+                                    </div>
+                                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{el.simulated_progress_percentage}%</span>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className="mobile-cards-view">
+                      {simulationData?.elements?.map((el) => {
+                        const styleInfo = stateColors[el.simulated_state] || stateColors.not_started;
+                        return (
+                          <div key={el.id} className="mobile-element-card" style={{ borderColor: el.is_active_on_date ? '#f59e0b' : 'var(--border-subtle)' }}>
+                            <div className="mobile-card-top">
+                              <span className="element-id-cell">{el.id}</span>
+                              <span className={`state-badge ${styleInfo.badge}`}>
+                                <span>{styleInfo.icon}</span>
+                                {styleInfo.label}
+                              </span>
+                            </div>
+                            <div className="mobile-card-body">
+                              <h4 className="mobile-card-title">{el.label}</h4>
+                              <div className="mobile-card-tags">
+                                <span className="type-tag">{el.element_type}</span>
+                                <span className="zone-pill">{el.spatial_zone}</span>
+                              </div>
+                              <div className="mobile-card-schedule">
+                                <span>📅 Planned: {el.planned_start} → {el.planned_end}</span>
+                              </div>
+                              <div style={{ marginTop: '10px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: '5px' }}>
+                                  <span>Simulated 4D Progress:</span>
+                                  <strong style={{ color: '#38bdf8' }}>{el.simulated_progress_percentage}%</strong>
+                                </div>
+                                <div style={{ width: '100%', height: '8px', background: '#1e293b', borderRadius: '4px', overflow: 'hidden' }}>
+                                  <div style={{ width: `${el.simulated_progress_percentage}%`, height: '100%', background: 'linear-gradient(90deg, #0ea5e9, #10b981)', transition: 'width 0.2s ease' }} />
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* TAB 3: MANUAL REVIEW QUEUE (SRS FR-022, FR-024) */}
           {activeTab === 'review_queue' && (
