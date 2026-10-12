@@ -122,8 +122,10 @@ export default function App() {
   const [uploadingEvidence, setUploadingEvidence] = useState(false);
   const fileInputRef = useRef(null);
 
-  // 4D Time Scrubber State
-  const [scrubberDate, setScrubberDate] = useState('2026-10-11');
+  // 4D Time Scrubber State (Simulate from Today forward to Future Completion)
+  const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
+  const futureCompletionStr = useMemo(() => '2026-11-30', []);
+  const [scrubberDate, setScrubberDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [isPlayingScrubber, setIsPlayingScrubber] = useState(false);
   const [simulationData, setSimulationData] = useState(null);
   const scrubberTimerRef = useRef(null);
@@ -484,27 +486,28 @@ export default function App() {
     fetchSimulation(scrubberDate);
   }, [scrubberDate]);
 
-  // Scrubber Auto-Playback Loop
+  // Scrubber Auto-Playback Loop (Simulate from Today to Future Completion)
   useEffect(() => {
     if (isPlayingScrubber) {
       scrubberTimerRef.current = setInterval(() => {
         setScrubberDate((prev) => {
           const d = new Date(prev);
           d.setDate(d.getDate() + 1);
-          if (d > new Date('2026-11-15')) {
+          const nextStr = d.toISOString().split('T')[0];
+          if (nextStr > futureCompletionStr) {
             setIsPlayingScrubber(false);
-            return '2026-08-15';
+            return todayStr; // Loop back to today
           }
-          return d.toISOString().split('T')[0];
+          return nextStr;
         });
-      }, 500);
+      }, 450);
     } else {
       if (scrubberTimerRef.current) clearInterval(scrubberTimerRef.current);
     }
     return () => {
       if (scrubberTimerRef.current) clearInterval(scrubberTimerRef.current);
     };
-  }, [isPlayingScrubber]);
+  }, [isPlayingScrubber, todayStr, futureCompletionStr]);
 
   // Fetch Evidence for Modal
   const loadElementEvidences = async (elemId) => {
@@ -1695,28 +1698,58 @@ export default function App() {
 
                 <div className="scrubber-slider-wrapper">
                   <div className="scrubber-slider-header">
-                    <span>Simulated Date: <strong style={{ color: '#38bdf8', fontSize: '1.2rem' }}>{scrubberDate}</strong></span>
-                    <input
-                      type="date"
-                      value={scrubberDate}
-                      onChange={(e) => setScrubberDate(e.target.value)}
-                      className="form-input"
-                      style={{ width: 'auto', padding: '4px 10px' }}
-                    />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <span>Simulated Date: <strong style={{ color: '#38bdf8', fontSize: '1.25rem' }}>{scrubberDate}</strong></span>
+                      {scrubberDate === todayStr && (
+                        <span style={{ background: '#059669', color: '#fff', fontSize: '0.72rem', padding: '3px 9px', borderRadius: '12px', fontWeight: 800 }}>
+                          TODAY
+                        </span>
+                      )}
+                      {scrubberDate >= futureCompletionStr && (
+                        <span style={{ background: '#3b82f6', color: '#fff', fontSize: '0.72rem', padding: '3px 9px', borderRadius: '12px', fontWeight: 800 }}>
+                          FUTURE COMPLETION
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      <button
+                        type="button"
+                        onClick={() => setScrubberDate(todayStr)}
+                        style={{ background: 'rgba(56, 189, 248, 0.15)', border: '1px solid rgba(56, 189, 248, 0.4)', color: '#38bdf8', borderRadius: '6px', padding: '4px 10px', fontSize: '0.8rem', cursor: 'pointer', fontWeight: 700 }}
+                      >
+                        📍 Today
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setScrubberDate(futureCompletionStr)}
+                        style={{ background: 'rgba(16, 185, 129, 0.15)', border: '1px solid rgba(16, 185, 129, 0.4)', color: '#34d399', borderRadius: '6px', padding: '4px 10px', fontSize: '0.8rem', cursor: 'pointer', fontWeight: 700 }}
+                      >
+                        🏁 Future Completion
+                      </button>
+                      <input
+                        type="date"
+                        min={todayStr}
+                        max={futureCompletionStr}
+                        value={scrubberDate}
+                        onChange={(e) => setScrubberDate(e.target.value)}
+                        className="form-input"
+                        style={{ width: 'auto', padding: '4px 10px' }}
+                      />
+                    </div>
                   </div>
                   <input
                     type="range"
-                    min="1723680000000" // 2026-08-15
-                    max="1731628800000" // 2026-11-15
+                    min={new Date(todayStr).getTime()}
+                    max={new Date(futureCompletionStr).getTime()}
                     step="86400000"     // 1 day
-                    value={new Date(scrubberDate).getTime()}
+                    value={Math.max(new Date(todayStr).getTime(), Math.min(new Date(futureCompletionStr).getTime(), new Date(scrubberDate).getTime()))}
                     onChange={(e) => setScrubberDate(new Date(parseInt(e.target.value)).toISOString().split('T')[0])}
                     className="range-slider"
                   />
                   <div className="slider-labels">
-                    <span>Aug 15, 2026 (Foundation)</span>
-                    <span>Oct 01 (Structural Frame)</span>
-                    <span>Nov 15, 2026 (Completion)</span>
+                    <span><strong>Today ({todayStr})</strong>: Current Site State</span>
+                    <span><strong>Nov 05, 2026</strong>: Superstructure Slabs</span>
+                    <span><strong>Nov 30, 2026</strong>: 100% Future Completion</span>
                   </div>
                 </div>
 
