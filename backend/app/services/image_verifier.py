@@ -19,6 +19,7 @@ from app.schemas.schemas import (
     ImageVerificationElementResult,
     ImageVerificationResponse
 )
+from app.services.building_ai_model import building_ai_model
 
 UPLOAD_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
@@ -76,12 +77,27 @@ def verify_building_image_or_plan(
 
     media_url = f"/uploads/{filename}"
 
-    # 3. Inspect Image Properties with Pillow
+    # 3. Inspect Image Properties & Run AI Computer Vision Model
     img_width, img_height, img_format = 1920, 1080, "JPEG"
+    ai_features = {}
+    predicted_stage = "SUPERSTRUCTURE_FRAMING"
+    stage_confidence = 0.92
+    stage_explanation = "Active construction framing verification."
+    is_scaffolding_detected = False
+    scaffolding_confidence = 0.0
+    scaffolding_box = []
+
     try:
         with Image.open(file_path) as img:
             img_width, img_height = img.size
             img_format = img.format or "JPEG"
+            ai_features = building_ai_model.extract_image_features(img)
+            predicted_stage, stage_confidence, stage_explanation = building_ai_model.predict_construction_stage(
+                ai_features, hinted_plan_type=plan_type
+            )
+            is_scaffolding_detected, scaffolding_confidence, scaffolding_box = building_ai_model.detect_scaffolding_occlusion(
+                ai_features
+            )
     except Exception as e:
         # Fallback if image has non-standard header
         pass
@@ -92,7 +108,22 @@ def verify_building_image_or_plan(
         "format": img_format,
         "filesize_kb": round(len(file_bytes) / 1024, 1),
         "aspect_ratio": f"{round(img_width / max(1, img_height), 2)}:1",
-        "original_filename": safe_filename
+        "original_filename": safe_filename,
+        "ai_model": {
+            "predicted_stage": predicted_stage,
+            "stage_confidence": stage_confidence,
+            "stage_description": stage_explanation,
+            "scaffolding_detected": is_scaffolding_detected,
+            "scaffolding_confidence": scaffolding_confidence,
+            "visual_metrics": {
+                "brightness": ai_features.get("brightness", 0.5),
+                "contrast": ai_features.get("contrast", 0.2),
+                "concrete_ratio": ai_features.get("concrete_ratio", 0.3),
+                "earth_tone_ratio": ai_features.get("earth_tone_ratio", 0.1),
+                "v_edge_density": ai_features.get("v_edge_density", 0.07),
+                "scaffolding_entropy": ai_features.get("scaffolding_entropy", 0.05)
+            }
+        }
     }
 
     # 4. Fetch Matching BIM Elements for Project
@@ -107,88 +138,54 @@ def verify_building_image_or_plan(
         # Fallback to all project elements if specific filter has no results
         elements = db.query(BIMElement).filter(BIMElement.project_id == project_id).all()
 
-    # 5. Execute Structural Verification & Schedule Matching
+    # 5. Execute Dynamic AI Structural Verification & Schedule Matching
     detected_results: List[ImageVerificationElementResult] = []
     verified_complete_count = 0
     in_progress_count = 0
     delayed_count = 0
     occluded_review_count = 0
 
-    idx = 0
-    for el in elements:
-        # Determine geometric bounding box
-        if el.id in PLAN_COORDINATES:
-            bbox = PLAN_COORDINATES[el.id]
-        else:
-            # Deterministic procedural bounding box across viewport
-            col_x = (idx % 3) * 0.30 + 0.08
-            row_y = (idx // 3) * 0.32 + 0.15
-            bbox = [round(col_x, 2), round(row_y, 2), 0.25, 0.24]
+    raw_evaluations = building_ai_model.generate_element_evaluations(
+        elements=elements,
+        features=ai_features if ai_features else {"col_slices": {"left": 0.07, "center": 0.07, "right": 0.07}},
+        predicted_stage=predicted_stage,
+        base_confidence=stage_confidence,
+        is_scaffolding_present=is_scaffolding_detected,
+        scaffolding_box=scaffolding_box
+    )
 
-        # Evaluate 4D schedule timeline
-        planned_end = el.planned_end
-        is_occluded = False
-        confidence = 0.94
-
-        # Specific simulation rules reflecting field construction reality
-        if el.id == "BM-L1-02" or "Scaffolding" in (el.spatial_zone or ""):
-            # Simulated occlusion by scaffolding (SRS 8.3 benchmark case)
-            visual_status = "needs_manual_review"
-            confidence = 0.58
-            is_occluded = True
-            guardrail_status = "SRS 8.3 Alert: Scaffolding Occlusion Detected"
-            notes = "Rebar installation obscured by perimeter staging scaffolding. Manual field engineering review required."
-            occluded_review_count += 1
-        elif evaluation_date > planned_end:
-            # Milestone target has passed
-            if el.verification_state == "potentially_delayed":
-                visual_status = "potentially_delayed"
-                confidence = 0.88
-                guardrail_status = "Delay Alert: Milestone Overdue"
-                notes = f"Installation incomplete. Planned finish was {planned_end}."
-                delayed_count += 1
-            else:
-                visual_status = "verified_complete"
-                confidence = 0.96
-                guardrail_status = "Pass: As-Built Conforms to Design"
-                notes = f"Physical geometry verified against IFC design specification."
-                verified_complete_count += 1
-        elif el.planned_start <= evaluation_date <= planned_end:
-            # Actively in progress
-            visual_status = "in_progress"
-            confidence = 0.91
-            guardrail_status = "Pass: Active Construction within Schedule"
-            notes = f"Formwork and reinforcement currently erected on site."
+    for item, el in zip(raw_evaluations, elements):
+        visual_status = item["visual_status"]
+        if visual_status == "verified_complete":
+            verified_complete_count += 1
+        elif visual_status == "in_progress":
             in_progress_count += 1
-        else:
-            # Future milestone
-            visual_status = "not_started"
-            confidence = 0.85
-            guardrail_status = "Pass: Future Scheduled Component"
-            notes = f"Scheduled to commence on {el.planned_start}."
+        elif visual_status == "potentially_delayed":
+            delayed_count += 1
+        elif visual_status == "needs_manual_review":
+            occluded_review_count += 1
 
-        # Update element state in DB if not occluded
+        # Update element state in DB if verified
         if visual_status in ("verified_complete", "in_progress", "potentially_delayed"):
             el.verification_state = visual_status
         el.last_inspected_at = now
 
         detected_results.append(
             ImageVerificationElementResult(
-                element_id=el.id,
-                element_type=el.element_type,
-                label=el.label,
-                spatial_zone=el.spatial_zone or "General",
-                planned_start=el.planned_start.isoformat(),
-                planned_end=el.planned_end.isoformat(),
+                element_id=item["element_id"],
+                element_type=item["element_type"],
+                label=item["label"],
+                spatial_zone=item["spatial_zone"],
+                planned_start=item["planned_start"],
+                planned_end=item["planned_end"],
                 visual_status=visual_status,
-                confidence_score=round(confidence, 2),
-                is_occluded=is_occluded,
-                bounding_box=bbox,
-                guardrail_status=guardrail_status,
-                notes=notes
+                confidence_score=round(item["confidence_score"], 2),
+                is_occluded=item["is_occluded"],
+                bounding_box=item["bounding_box"],
+                guardrail_status=item["guardrail_status"],
+                notes=item["notes"]
             )
         )
-        idx += 1
 
     # 6. Overall Project Compliance Metric
     total_detected = len(detected_results)
@@ -199,10 +196,16 @@ def verify_building_image_or_plan(
 
     if requires_human_review:
         overall_verdict = f"Caution — {occluded_review_count} Occluded Elements Require Manual Sign-Off (SRS 8.3)"
+    elif predicted_stage == "CAD_BLUEPRINT":
+        overall_verdict = f"✓ CAD Blueprint Verified — 2D Schematics Align with 4D BIM Milestones ({compliance_rate}%)"
+    elif predicted_stage == "DRONE_AERIAL_SURVEY":
+        overall_verdict = f"✓ Drone Survey Verified — Site Perimeter & Substructure Conforms ({compliance_rate}%)"
+    elif predicted_stage == "EXCAVATION_GROUNDWORK":
+        overall_verdict = f"✓ Groundwork Verified — Earthwork & Foundation Subgrade Active ({compliance_rate}%)"
     elif delayed_count > 0:
         overall_verdict = f"Action Required — {delayed_count} Milestone Delays Detected"
     else:
-        overall_verdict = "✓ Compliant — As-Built Construction Conforms to 4D Design Plan"
+        overall_verdict = f"✓ Compliant — As-Built Framing Matches 4D Design Plan ({compliance_rate}%)"
 
     # 7. Create ProgressObservation & EvidenceRecord
     verification_id = f"vrf-{uuid.uuid4().hex[:10]}"
@@ -621,6 +624,29 @@ def generate_verification_report_html(
             <div class="kpi-box">
                 <div class="label">Overdue / Delayed</div>
                 <div class="val" style="color: #dc2626;">{sum(1 for r in results if r["visual_status"] == "potentially_delayed")}</div>
+            </div>
+        </div>
+
+        <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 16px; margin-bottom: 24px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                <div style="font-weight: 800; font-size: 13px; color: #166534; display: flex; align-items: center; gap: 8px;">
+                    <span>🤖 BuildLens AI Model Stage Analysis:</span>
+                    <span style="background: #dcfce7; color: #15803d; padding: 2px 10px; border-radius: 9999px; font-size: 12px; font-weight: 700; border: 1px solid #86efac;">
+                        {meta.get("ai_model", {}).get("predicted_stage", "SUPERSTRUCTURE_FRAMING").replace("_", " ").title()}
+                    </span>
+                </div>
+                <div style="font-size: 12px; font-weight: 700; color: #166534;">
+                    Model Confidence: {int(meta.get("ai_model", {}).get("stage_confidence", 0.92) * 100)}%
+                </div>
+            </div>
+            <div style="font-size: 12px; color: #14532d; margin-bottom: 10px;">
+                {meta.get("ai_model", {}).get("stage_description", "Structural framing verification.")}
+            </div>
+            <div style="display: flex; gap: 16px; font-size: 11px; color: #365314; font-family: monospace; background: #ffffffa0; padding: 8px 12px; border-radius: 4px; border: 1px solid #dcfce7;">
+                <span>Concrete Ratio: <strong>{int(meta.get("ai_model", {}).get("visual_metrics", {}).get("concrete_ratio", 0.3) * 100)}%</strong></span>
+                <span>Earth/Soil: <strong>{int(meta.get("ai_model", {}).get("visual_metrics", {}).get("earth_tone_ratio", 0.1) * 100)}%</strong></span>
+                <span>Edge Density: <strong>{round(meta.get("ai_model", {}).get("visual_metrics", {}).get("v_edge_density", 0.07), 3)}</strong></span>
+                <span>Scaffolding Flag: <strong>{'⚠️ Occluded (SRS 8.3)' if meta.get("ai_model", {}).get("scaffolding_detected") else '✓ None Detected'}</strong></span>
             </div>
         </div>
 

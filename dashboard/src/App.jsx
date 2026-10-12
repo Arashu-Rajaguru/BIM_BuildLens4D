@@ -1141,6 +1141,59 @@ export default function App() {
                     </div>
                   </div>
 
+                  {/* AI Building Form & Construction Stage Classifier Badge */}
+                  {verificationResult.image_metadata?.ai_model && (
+                    <div style={{
+                      background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.12) 0%, rgba(6, 95, 70, 0.22) 100%)',
+                      border: '1px solid rgba(52, 211, 153, 0.35)',
+                      borderRadius: '12px',
+                      padding: '16px 20px',
+                      marginBottom: '20px',
+                      boxShadow: '0 4px 16px rgba(0,0,0,0.2)'
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '8px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <span style={{ fontSize: '1.4rem' }}>🤖</span>
+                          <div>
+                            <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#6ee7b7', fontWeight: 700 }}>
+                              AI Building Recognition Engine
+                            </div>
+                            <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#f0fdf4' }}>
+                              Detected Stage: <span style={{ color: '#34d399' }}>{verificationResult.image_metadata.ai_model.predicted_stage?.replace(/_/g, ' ')}</span>
+                            </div>
+                          </div>
+                        </div>
+                        <div style={{ background: 'rgba(52, 211, 153, 0.2)', border: '1px solid #34d399', color: '#6ee7b7', padding: '4px 12px', borderRadius: '20px', fontWeight: 800, fontSize: '0.85rem' }}>
+                          Model Confidence: {Math.round((verificationResult.image_metadata.ai_model.stage_confidence || 0.9) * 100)}%
+                        </div>
+                      </div>
+                      <div style={{ fontSize: '0.85rem', color: '#d1fae5', marginBottom: '12px', lineHeight: 1.5 }}>
+                        {verificationResult.image_metadata.ai_model.stage_description}
+                      </div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', fontSize: '0.75rem' }}>
+                        <span style={{ background: 'rgba(0,0,0,0.35)', padding: '3px 10px', borderRadius: '6px', color: '#93c5fd', border: '1px solid rgba(147, 197, 253, 0.2)' }}>
+                          Concrete Ratio: <strong>{Math.round((verificationResult.image_metadata.ai_model.visual_metrics?.concrete_ratio || 0.3) * 100)}%</strong>
+                        </span>
+                        <span style={{ background: 'rgba(0,0,0,0.35)', padding: '3px 10px', borderRadius: '6px', color: '#fde047', border: '1px solid rgba(253, 224, 71, 0.2)' }}>
+                          Earthwork/Soil: <strong>{Math.round((verificationResult.image_metadata.ai_model.visual_metrics?.earth_tone_ratio || 0.1) * 100)}%</strong>
+                        </span>
+                        <span style={{ background: 'rgba(0,0,0,0.35)', padding: '3px 10px', borderRadius: '6px', color: '#c4b5fd', border: '1px solid rgba(196, 181, 253, 0.2)' }}>
+                          Structural Edge Density: <strong>{verificationResult.image_metadata.ai_model.visual_metrics?.v_edge_density || '0.07'}</strong>
+                        </span>
+                        <span style={{
+                          background: verificationResult.image_metadata.ai_model.scaffolding_detected ? 'rgba(239, 68, 68, 0.25)' : 'rgba(16, 185, 129, 0.25)',
+                          padding: '3px 10px',
+                          borderRadius: '6px',
+                          color: verificationResult.image_metadata.ai_model.scaffolding_detected ? '#fca5a5' : '#86efac',
+                          border: verificationResult.image_metadata.ai_model.scaffolding_detected ? '1px solid rgba(239, 68, 68, 0.4)' : '1px solid rgba(16, 185, 129, 0.4)',
+                          fontWeight: 700
+                        }}>
+                          {verificationResult.image_metadata.ai_model.scaffolding_detected ? '⚠️ Scaffolding Occlusion Flagged (SRS 8.3)' : '✓ Line of Sight Unobstructed'}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Summary Metric Cards */}
                   <div className="verification-metrics-grid">
                     <div className="kpi-card">

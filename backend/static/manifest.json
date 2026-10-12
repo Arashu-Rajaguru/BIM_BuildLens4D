@@ -1,0 +1,30 @@
+{
+  "name": "BuildLens 4D — AR Construction Progress & BIM Verification",
+  "short_name": "BuildLens 4D",
+  "description": "Mobile AR 4D BIM progress monitoring, real-world building verification, and schedule compliance system.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "theme_color": "#0284c7",
+  "background_color": "#0a0e17",
+  "categories": ["productivity", "business", "utilities"],
+  "icons": [
+    {
+      "src": "/pwa-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/pwa-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
